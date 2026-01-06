@@ -1,18 +1,43 @@
 #agentes.py clase de agentes, por Miguel Acevedo y Emilia Partarrieu 12/25
+# Actualizado con sistema de clasificación vivo/menos_vivo y contador de conflictos
 import numpy as np
 import random
 
 class Agente:
-    def __init__(self, x, y, floor_field):
+    """
+    Clase que representa un agente en la simulación de evacuación.
+        Atributos:
+        x, y : int
+            Posición actual del agente en la grilla
+        floor_field : Floor_field
+            Referencia al campo de piso que guía el movimiento
+        activo : bool
+            True si el agente aún está en la habitación, False si ya evacuó
+        tipo : str
+            'vivo' o 'menos_vivo' - determina la prioridad en conflictos
+        conflictos_totales : int
+            Contador de conflictos en los que ha participado el agente
+        conflictos_perdidos : int
+            Contador de conflictos que ha perdido (no se pudo mover)
+        ansiedad : int
+            Nivel de ansiedad del agente (puede implementarse para lógica futura)
+    """
+    def __init__(self, x, y, floor_field, tipo='vivo'):
         self.x = x
         self.y = y
         self.floor_field = floor_field
-        self.activo = True  # cambiará a False cuando el agente llegue a la puerta
+        self.activo = True  # cambiar a False cuando el agente llegue a la puerta
+        
+        # Nuevos atributos para el sistema de clasificación y tracking
+        self.tipo = tipo  # vivo o menos_vivo
+        self.conflictos_totales = 0  # Total de conflictos en los que participó
+        self.conflictos_perdidos = 0  # Conflictos donde no ganó el movimiento
+        self.ansiedad = 0  # Nivel de ansiedad A IMPLEMENTAR
         
     def proponer_movimiento(self):
         """
         Retorna la mejor celda candidata a moverse (nx, ny) para cada agente,
-        sin mover todavía al agente.
+        sin mover al agente.
         """
         if not self.activo:
             return (self.x, self.y)
@@ -40,12 +65,12 @@ class Agente:
 
     def moverse(self, nueva_pos):
         """
-        Mueve el agente a la posición nueva (si sigue activo).
+        Mueve el agente a la posicion nueva (si sigue activo).
         """
         if not self.activo:
             return
         
-        self.x, self.y = nueva_pos  # nueva_pos se definirá en el main para resolver conflictos
+        self.x, self.y = nueva_pos  # nueva_pos se define en el main para resolver conflictos
         if self.floor_field.valores[self.y, self.x] == 0: # Si llega a una puerta (valor = 1)
             self.activo = False # deja de estar activo
 
@@ -53,33 +78,69 @@ class Agente:
 def mover_agentes(agentes):
     """
     Calcula y ejecuta los movimientos de todos los agentes evitando colisiones.
-    Reglas:
-    - Cada agente propone un movimiento.
-    - Si varios quieren la misma celda, se elige uno al azar.
-    - Los demás se quedan quietos.
+    
+    Reglas actualizadas:
+        - Cada agente propone un movimiento según el floor_field
+        - Si varios agentes quieren la misma celda:
+            1. Se da prioridad a los agentes 'vivos' sobre los 'menos_vivos'
+            2. Si hay empate de tipo, se elige uno al azar (AQUÍ SE DEBE IMPLEMENTAR LA ANSIEDAD como FACTOR determinante)
+        - Los que no ganan el conflicto se quedan quietos
+        - Se registran todos los conflictos en los contadores de cada agente
+    Parámetros:
+        agentes : list
+            Lista de objetos Agente que participan en la simulación
+    Retorna:
+        dict : Estadísticas del paso de tiempo
+            - conflictos_totales: número total de celdas con conflicto
+            - 'agentes_en_conflicto': número de agentes involucrados en conflictos
     """
-    # Paso 1: todos proponen su movimiento
-    propuestas = {} # creamos un diccionario vacío, las claves serán las posiciones de destino y los valores el agente que quiere ir a ese destino.
-    for agente in agentes:
-        if agente.activo:  # para cada agente activo
-            destino = agente.proponer_movimiento() # destino es la posicion que quiere agente (nx, ny)
-            propuestas.setdefault(destino, []).append(agente)
-            
-        """
-        para cada destino, appendeamos en una lista inicialmente vacia los agentes
-        que quieren moverse a ese destino. esto nos da un diccionario propuestas
-        donde cada destino toma el valor de una lista con los agentes que desean ir ahí. 
-        """
-    # el resultado de esta sección de código es un diccionario llamado propuestas
 
-    # Paso 2: resolver conflictos
+    propuestas = {}
+    
+    for agente in agentes:
+        if agente.activo:  # Solo los agentes activos proponen movimiento
+            destino = agente.proponer_movimiento()  # Obtiene la mejor celda según floor_field
+            propuestas.setdefault(destino, []).append(agente)
+    
+    # Paso 2: Resolver conflictos con sistema de priorización
+    estadisticas = {
+        'conflictos_totales': 0,
+        'agentes_en_conflicto': 0
+    }
+    
     for destino, lista_agentes in propuestas.items():
         if len(lista_agentes) == 1:
+            # No hay conflicto: el único agente se mueve sin problemas
             lista_agentes[0].moverse(destino)
         else:
-            elegido = random.choice(lista_agentes)
+            # HAY CONFLICTO: múltiples agentes quieren la misma celda
+            estadisticas['conflictos_totales'] += 1
+            estadisticas['agentes_en_conflicto'] += len(lista_agentes)
+            
+            # Registrar el conflicto en todos los agentes involucrados
+            for agente in lista_agentes:
+                agente.conflictos_totales += 1
+            
+            # SISTEMA DE PRIORIZACIÓN:
+            # 1. Separar agentes por tipo
+            vivos = [a for a in lista_agentes if a.tipo == 'vivo']
+            menos_vivos = [a for a in lista_agentes if a.tipo == 'menos_vivo']
+            
+            # 2. Determinar el ganador según prioridad
+            if vivos:
+                # Si hay al menos un agente 'vivo', elegir entre ellos
+                elegido = random.choice(vivos)
+            else:
+                # Si solo hay agentes 'menos_vivo', elegir entre ellos
+                elegido = random.choice(menos_vivos)
+            
+            # 3. Ejecutar el movimiento del ganador
             elegido.moverse(destino)
+            
+            # 4. Los perdedores se quedan en su posición y se registra su pérdida
             for otro in lista_agentes:
                 if otro != elegido:
-                    otro.moverse((otro.x, otro.y))  # el otro se queda quieto (cede el paso)
-
+                    otro.conflictos_perdidos += 1
+                    otro.moverse((otro.x, otro.y))  # Se queda en su lugar
+    
+    return estadisticas

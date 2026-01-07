@@ -29,7 +29,7 @@ from simulacion_logger import SimulacionLogger
 
 
 def ejecutar_simulacion_con_logging(
-    porcentaje_vivos: float = 0.5,
+    porcentaje_vivos: float = 0.5, # SE PUEDE CAMBIAR LA PROPORCION DE AGENTES VIVOS
     nombre_salida: str = None,
     mostrar_progreso: bool = True
 ):

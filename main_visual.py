@@ -10,13 +10,13 @@ def main():
     
     campo = Floor_field(esc.width, esc.height, esc.puertas, esc.obstaculos)
 
-    agentes = [Agente(x, y, campo) for (x, y) in esc.agentes]
+    agentes = [Agente(x, y, campo, velocidad=v) for (x, y, v) in esc.agentes]
     
     pasos = 0
     
     while any(a.activo for a in agentes):
         mostrar_matriz(campo, agentes)
-        guardar_frame(campo, agentes, pasos)
+#       guardar_frame(campo, agentes, pasos) con el nuevo visualizador quedará obsoleto
         mover_agentes(agentes)
         pasos += 1
         time.sleep(0.2)
@@ -24,7 +24,7 @@ def main():
     mostrar_matriz(campo, agentes)
     print(f" los {len(agentes)} agentes llegaron a la puerta en {pasos} pasos.")
  
-
+    """
     #---------- Imagen de la matriz (campo de piso) obtenida
     fig, ax = plt.subplots(figsize=(12, 12))
     ax.axis("off")
@@ -51,7 +51,8 @@ def main():
     plt.savefig("floor_field.png", dpi= 300, bbox_inches="tight" )
 
     plt.show()
-    return pasos 
+    """
+    return pasos, agentes 
 
 
 if __name__ == "__main__":
@@ -60,7 +61,7 @@ if __name__ == "__main__":
 
     for i in range(N):
         print(f"\n--- Ejecución {i+1}/{N} ---")
-        pasos = main()   # ejecuta el main y recibe los pasos
+        pasos, lista_agentes_objetos = main()   # ejecuta el main y recibe los pasos y la lista de agentes.
         resultados.append(pasos)
 
     promedio = sum(resultados) / len(resultados)
@@ -70,3 +71,5 @@ if __name__ == "__main__":
     print("---------------------------------")
     print(f"Pasos de cada ejecución: {resultados}")
     print(f"Promedio de pasos en {N} ejecuciones: {promedio:.2f}")
+    for a in lista_agentes_objetos:
+        print(f"Agente ID {a.id} | (Vel: {a.velocidad}) | {a.conflictos} conflictos | {a.victorias} victorias | {a.derrotas} derrotas | Tiempo de evacuación: {a.tiempo_evacuacion} ")

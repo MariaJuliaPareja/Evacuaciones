@@ -1,0 +1,32 @@
+
+def mostrar_matriz(campo, agentes): # para main_visual.py
+
+    """Función para visualizar la simulación en la terminal"""
+
+    os.system("clear")  
+
+    for y in range(campo.height):
+
+        fila = ""
+
+        for x in range(campo.width):
+
+            if any(a.x == x and a.y == y and a.activo for a in agentes):
+
+                fila += a.id for a in agentes 
+
+            elif campo.valores[y, x] == 500:
+
+                fila += "█ "
+
+            elif campo.valores[y, x] == 0:
+
+                fila += "⎯ "
+
+            else:
+
+                fila += ". "
+
+        print(fila)
+
+    print(f"Agentes activos: {sum(a.activo for a in agentes)}\n")

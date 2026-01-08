@@ -75,7 +75,7 @@ def simular_simple(num_pasos=10):
         pickle.dump(AgentExtendido.history, f)
     
     print(f"\nListo: historia.pkl ({num_pasos} pasos)")
-    print(f"Visualizar: python visualizador_interactivo.py historia.pkl")
+    print(f"Visualizar: python visualizador.py historia.pkl")
 
 # SIMULACIÓN CON FLOOR FIELD
 
@@ -182,7 +182,7 @@ def simular_evacuacion(escenario='basico'):
         pickle.dump(AgentExtendido.history, f)
     
     print(f"Archivo: {archivo}")
-    print(f"Visualizar: python visualizador_interactivo.py {archivo}")
+    print(f"Visualizar: python visualizador.py {archivo}")
 
 
 def menu():

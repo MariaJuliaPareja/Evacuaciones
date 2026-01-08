@@ -325,31 +325,26 @@ class VisualizadorSimulacion:
             total_agentes = len(estados)
             porcentaje_evacuado = (total_evacuados / total_agentes * 100) if total_agentes > 0 else 0
             
-            info_text = f"""
-╔══════════════════════════╗
-║   PASO {frame_num:3d}/{max_frames:3d}          ║
-╚══════════════════════════╝
-
+            info_text = f""" PASO {frame_num:3d}/{max_frames:3d}     
 AGENTES VIVOS:
-  ▶ Activos: {stats.vivos_activos}
-  ▶ Evacuados: {stats.vivos_evacuados}
+  Activos: {stats.vivos_activos}
+  Evacuados: {stats.vivos_evacuados}
 
 AGENTES MENOS VIVOS:
-  ▶ Activos: {stats.menos_vivos_activos}
-  ▶ Evacuados: {stats.menos_vivos_evacuados}
+  Activos: {stats.menos_vivos_activos}
+  Evacuados: {stats.menos_vivos_evacuados}
 
 CONFLICTOS:
-  ▶ En este paso: {stats.conflictos_en_paso}
-  ▶ Agentes involucrados: {stats.agentes_en_conflicto}
+  En este paso: {stats.conflictos_en_paso}
+  Agentes involucrados: {stats.agentes_en_conflicto}
 
 PROGRESO GLOBAL:
-  ▶ Total agentes: {total_agentes}
-  ▶ Evacuados: {total_evacuados}
-  ▶ Porcentaje: {porcentaje_evacuado:.1f}%
+  Total agentes: {total_agentes}
+  Evacuados: {total_evacuados}
+  Porcentaje: {porcentaje_evacuado:.1f}%
 
-╔══════════════════════════╗
-║   FORMATO: {self.formato:12s} ║
-╚══════════════════════════╝
+FORMATO: {self.formato:12s} 
+
 """
             
             ax_info.text(
@@ -457,7 +452,7 @@ PROGRESO GLOBAL:
         anim = animation.FuncAnimation(
             fig, animate,
             frames=max_frames + 1,
-            interval=lambda: state['interval'],
+            interval=500,
             repeat=True,
             blit=False
         )

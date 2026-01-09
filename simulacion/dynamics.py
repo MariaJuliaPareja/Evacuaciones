@@ -22,52 +22,74 @@ def simular_simple(num_pasos=10):
     # Crear 5 agentes
     [AgentExtendido() for _ in range(5)]
     
-    # Posiciones iniciales (como tu código original)
+    # Posiciones iniciales - asegurar que no haya dos agentes en la misma celda
     AgentExtendido.instances[0].pos_x = 5
     AgentExtendido.instances[0].pos_y = 5
     AgentExtendido.instances[1].pos_x = 3
     AgentExtendido.instances[1].pos_y = 5
-    AgentExtendido.instances[2].pos_x = 3
+    AgentExtendido.instances[2].pos_x = 4  # Cambiado de (3,5) a (4,5) para evitar duplicado
     AgentExtendido.instances[2].pos_y = 5
     AgentExtendido.instances[3].pos_x = 5
     AgentExtendido.instances[3].pos_y = 3
-    AgentExtendido.instances[4].pos_x = 5
+    AgentExtendido.instances[4].pos_x = 6  # Cambiado de (5,3) a (6,3) para evitar duplicado
     AgentExtendido.instances[4].pos_y = 3
     
     print(f"5 agentes creados")
     print("Agente 0: (5,5) - quieto")
-    print("Agentes 1-2: (3,5) - oscilan X")
-    print("Agentes 3-4: (5,3) - oscilan Y")
+    print("Agente 1: (3,5) - oscila X")
+    print("Agente 2: (4,5) - oscila X")
+    print("Agente 3: (5,3) - oscila Y")
+    print("Agente 4: (6,3) - oscila Y")
+    
+    # Verificar que todos los agentes tienen posiciones válidas
+    for i, agent in enumerate(AgentExtendido.instances):
+        if agent.pos_x is None or agent.pos_y is None:
+            print(f"ADVERTENCIA: Agente {i} no tiene posición asignada")
     
     AgentExtendido.stores()
     
-    # Loop oscilatorio
+    # Loop oscilatorio con verificación de colisiones
     incr = 1
     print(f"\nEjecutando {num_pasos} pasos...")
     
     for it in range(num_pasos):
+        # Agente 0 se queda quieto
         AgentExtendido.instances[0].if_change = False
         
-        AgentExtendido.instances[1].pos_x += incr
-        AgentExtendido.instances[1].if_change = True
+        # Calcular nuevas posiciones primero
+        nuevas_posiciones = {}
+        nuevas_posiciones[1] = (AgentExtendido.instances[1].pos_x + incr, AgentExtendido.instances[1].pos_y)
+        nuevas_posiciones[2] = (AgentExtendido.instances[2].pos_x + (-incr), AgentExtendido.instances[2].pos_y)
+        nuevas_posiciones[3] = (AgentExtendido.instances[3].pos_x, AgentExtendido.instances[3].pos_y + incr)
+        nuevas_posiciones[4] = (AgentExtendido.instances[4].pos_x, AgentExtendido.instances[4].pos_y + (-incr))
         
-        AgentExtendido.instances[2].pos_x += -incr
-        AgentExtendido.instances[2].if_change = True
+        # Verificar colisiones y aplicar movimientos solo si no hay conflicto
+        posiciones_ocupadas = {
+            (AgentExtendido.instances[0].pos_x, AgentExtendido.instances[0].pos_y): 0
+        }
         
-        AgentExtendido.instances[3].pos_y += incr
-        AgentExtendido.instances[3].if_change = True
-        
-        AgentExtendido.instances[4].pos_y += -incr
-        AgentExtendido.instances[4].if_change = True
+        # Aplicar movimientos en orden, evitando colisiones
+        for agente_id in [1, 2, 3, 4]:
+            nueva_pos = nuevas_posiciones[agente_id]
+            if nueva_pos not in posiciones_ocupadas:
+                # Movimiento válido
+                AgentExtendido.instances[agente_id].pos_x = nueva_pos[0]
+                AgentExtendido.instances[agente_id].pos_y = nueva_pos[1]
+                AgentExtendido.instances[agente_id].if_change = True
+                posiciones_ocupadas[nueva_pos] = agente_id
+            else:
+                # Colisión detectada, agente se queda quieto
+                AgentExtendido.instances[agente_id].if_change = False
         
         AgentExtendido.stores()
         incr *= -1
     
-    # Añadir config
+    # Añadir config con puertas para evacuación
     AgentExtendido.history.append({
         "size_x": 10,
         "size_y": 10,
-        "obstacles": [(i, 0) for i in range(10)]
+        "obstacles": [(i, 0) for i in range(10)],
+        "puertas": [(0, 4), (0, 5)]  # Agregar puertas en el lado izquierdo
     })
     
     # Guardar
@@ -140,16 +162,31 @@ def simular_evacuacion(escenario='basico'):
     for i in range(config['num_agentes'] - num_vivos):
         AgentExtendido(agent_type='menos_vivo', floor_field=ff)
     
-    # Posiciones aleatorias en mitad derecha
+    # Posiciones aleatorias en mitad derecha - asegurar que no haya dos agentes en la misma celda
+    posiciones_ocupadas = set()
     for agent in AgentExtendido.instances:
-        agent.pos_x = random.randint(width//2, width-2)
-        agent.pos_y = random.randint(1, height-2)
-        
-        while (agent.pos_x, agent.pos_y) in config['obstaculos']:
+        intentos = 0
+        max_intentos = 100
+        while intentos < max_intentos:
             agent.pos_x = random.randint(width//2, width-2)
             agent.pos_y = random.randint(1, height-2)
+            pos = (agent.pos_x, agent.pos_y)
+            
+            # Verificar que no esté en un obstáculo ni ocupado por otro agente
+            if pos not in config['obstaculos'] and pos not in posiciones_ocupadas:
+                posiciones_ocupadas.add(pos)
+                break
+            intentos += 1
+        
+        if intentos >= max_intentos:
+            print(f"ADVERTENCIA: No se pudo asignar posición única al agente {agent.id}")
     
     print(f"{config['num_agentes']} agentes ({num_vivos} vivos)")
+    
+    # Verificar que todos los agentes tienen posiciones válidas
+    for i, agent in enumerate(AgentExtendido.instances):
+        if agent.pos_x is None or agent.pos_y is None:
+            print(f"ADVERTENCIA: Agente {i} no tiene posición asignada")
     
     AgentExtendido.stores()
     

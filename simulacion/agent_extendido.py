@@ -2,6 +2,7 @@
 from typing import Self, Optional, Tuple
 import random
 import numpy as np
+import copy
 
 class AgentExtendido:
     """
@@ -52,7 +53,9 @@ class AgentExtendido:
     @classmethod
     def stores(cls) -> None:
         """Guarda snapshot del estado actual"""
-        cls.history.append(cls.instances[:])  # Copia de la lista
+        # Hacer copia profunda de los agentes para preservar su estado
+        snapshot = [copy.deepcopy(agent) for agent in cls.instances]
+        cls.history.append(snapshot)
     
     # ========== NUEVOS MÉTODOS AVANZADOS ==========
     
@@ -137,6 +140,7 @@ def mover_agentes_con_conflictos(agentes: list[AgentExtendido]) -> dict:
        - Si empate de tipo, azar
     3. Los perdedores se quedan quietos
     4. Se registran conflictos
+    5. NUNCA dos agentes pueden estar en la misma celda
     
     Parámetros:
     agentes : list[AgentExtendido]
@@ -156,20 +160,46 @@ def mover_agentes_con_conflictos(agentes: list[AgentExtendido]) -> dict:
             destino = agente.proponer_movimiento()
             propuestas.setdefault(destino, []).append(agente)
     
-    # Paso 2: Resolver conflictos
+    # Paso 2: Resolver conflictos y asegurar que no haya dos agentes en la misma celda
     stats = {
         'conflictos_totales': 0,
         'agentes_en_conflicto': 0,
         'movimientos': 0
     }
     
+    # Rastrear qué celdas están ocupadas después de los movimientos
+    celdas_ocupadas = {}
+    
+    # Primero, registrar las posiciones actuales de los agentes activos
+    for agente in agentes:
+        if agente.activo and agente.pos_x is not None and agente.pos_y is not None:
+            pos_actual = (agente.pos_x, agente.pos_y)
+            celdas_ocupadas[pos_actual] = agente
+    
+    # Procesar propuestas en orden de prioridad
     for destino, lista_agentes in propuestas.items():
+        # Verificar si el destino ya está ocupado por otro agente que ya se movió
+        if destino in celdas_ocupadas:
+            # El destino ya está ocupado, todos los que querían ir ahí se quedan quietos
+            stats['conflictos_totales'] += 1
+            stats['agentes_en_conflicto'] += len(lista_agentes)
+            
+            for a in lista_agentes:
+                a.conflictos_totales += 1
+                a.conflictos_perdidos += 1
+                a.if_change = False
+            continue
+        
         if len(lista_agentes) == 1:
-            # Sin conflicto
+            # Sin conflicto entre agentes que quieren esta celda
             agente = lista_agentes[0]
-            agente.mover_a(destino[0], destino[1])
-            if agente.if_change:
-                stats['movimientos'] += 1
+            # Verificar que el agente realmente se puede mover (no está ya en esa posición)
+            if agente.pos_x != destino[0] or agente.pos_y != destino[1]:
+                agente.mover_a(destino[0], destino[1])
+                if agente.if_change:
+                    stats['movimientos'] += 1
+                    # Marcar la celda como ocupada
+                    celdas_ocupadas[destino] = agente
         else:
             # CONFLICTO: varios quieren la misma celda
             stats['conflictos_totales'] += 1
@@ -188,10 +218,13 @@ def mover_agentes_con_conflictos(agentes: list[AgentExtendido]) -> dict:
             else:
                 elegido = random.choice(menos_vivos)
             
-            # Mover al ganador
-            elegido.mover_a(destino[0], destino[1])
-            if elegido.if_change:
-                stats['movimientos'] += 1
+            # Mover al ganador solo si realmente se puede mover
+            if elegido.pos_x != destino[0] or elegido.pos_y != destino[1]:
+                elegido.mover_a(destino[0], destino[1])
+                if elegido.if_change:
+                    stats['movimientos'] += 1
+                    # Marcar la celda como ocupada
+                    celdas_ocupadas[destino] = elegido
             
             # Perdedores se quedan quietos
             for otro in lista_agentes:

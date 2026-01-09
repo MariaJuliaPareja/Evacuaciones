@@ -104,6 +104,15 @@ class VisualizadorSimulacion:
             print(f"Formato: {self.formato}")
             print(f"Pasos: {len(self.historial_agentes)}")
             print(f"Agentes: {len(self.historial_agentes[0])}")
+            
+            # Mostrar información de evacuados del último paso
+            if self.historial_estadisticas:
+                stats_final = self.historial_estadisticas[-1]
+                total_evacuados = stats_final.vivos_evacuados + stats_final.menos_vivos_evacuados
+                print(f"\nEvacuados en último paso:")
+                print(f"  Vivos: {stats_final.vivos_evacuados}")
+                print(f"  Menos vivos: {stats_final.menos_vivos_evacuados}")
+                print(f"  Total: {total_evacuados}")
         
         except FileNotFoundError:
             raise FileNotFoundError(f"No se encontró: {self.archivo_pkl}")
@@ -151,7 +160,13 @@ class VisualizadorSimulacion:
                               getattr(agent, 'agent_type', 'vivo'))
                 
                 # Verificar si está activo
+                # Usar getattr con default True, pero también verificar explícitamente
                 activo = getattr(agent, 'activo', True)
+                
+                # Debug: verificar si el atributo existe y su valor
+                # (comentado para producción, descomentar si hay problemas)
+                # if paso_idx == len(historia_agentes) - 1:  # Último paso
+                #     print(f"Agente {getattr(agent, 'id', '?')}: activo={activo}, tipo={tipo}, hasattr_activo={hasattr(agent, 'activo')}")
                 
                 # Contar por categoría
                 if tipo == 'vivo':
@@ -165,11 +180,23 @@ class VisualizadorSimulacion:
                     else:
                         menos_vivos_evacuados += 1
                 
+                # Obtener posiciones con validación
+                pos_x = getattr(agent, 'pos_x', None)
+                pos_y = getattr(agent, 'pos_y', None)
+                
+                # Si las posiciones son None, usar valores por defecto (0,0) pero marcar como no activo
+                if pos_x is None or pos_y is None:
+                    pos_x = pos_x if pos_x is not None else 0
+                    pos_y = pos_y if pos_y is not None else 0
+                    # Si no tiene posición, probablemente no debería estar activo
+                    if pos_x == 0 and pos_y == 0 and not hasattr(agent, 'pos_x'):
+                        activo = False
+                
                 # Crear estado
                 estado = EstadoAgente(
-                    id=agent.id,
-                    x=agent.pos_x,
-                    y=agent.pos_y,
+                    id=getattr(agent, 'id', len(estados_paso)),
+                    x=pos_x,
+                    y=pos_y,
                     tipo=tipo,
                     activo=activo,
                     conflictos_totales=getattr(agent, 'conflictos_totales', 0),
@@ -274,36 +301,45 @@ class VisualizadorSimulacion:
                 ax_main.add_patch(rect)
             
             # Obtener datos del frame
+            # Asegurarse de que el índice esté dentro del rango válido
+            if frame_num >= len(self.historial_agentes):
+                frame_num = len(self.historial_agentes) - 1
+            if frame_num < 0:
+                frame_num = 0
+                
             estados = self.historial_agentes[frame_num]
             stats = self.historial_estadisticas[frame_num]
             
             # Dibujar agentes activos
             for estado in estados:
-                if estado.activo:
-                    # Determinar color según tipo
-                    if estado.tipo in self.COLORES:
-                        color = self.COLORES[estado.tipo]
-                    else:
-                        # Para tipos genéricos
-                        color = self.COLORES.get(
-                            f'agent_{estado.id % 5}',
-                            '#888888'
+                # Solo dibujar si está activo y tiene posición válida
+                if estado.activo and estado.x is not None and estado.y is not None:
+                    # Verificar que la posición esté dentro del rango del escenario
+                    if 0 <= estado.x < width and 0 <= estado.y < height:
+                        # Determinar color según tipo
+                        if estado.tipo in self.COLORES:
+                            color = self.COLORES[estado.tipo]
+                        else:
+                            # Para tipos genéricos
+                            color = self.COLORES.get(
+                                f'agent_{estado.id % 5}',
+                                '#888888'
+                            )
+                        
+                        # Círculo del agente
+                        circle = Circle(
+                            (estado.x, estado.y), 0.35,
+                            color=color, alpha=0.8, zorder=10
                         )
-                    
-                    # Círculo del agente
-                    circle = Circle(
-                        (estado.x, estado.y), 0.35,
-                        color=color, alpha=0.8, zorder=10
-                    )
-                    ax_main.add_patch(circle)
-                    
-                    # ID del agente
-                    ax_main.text(
-                        estado.x, estado.y, str(estado.id),
-                        ha='center', va='center',
-                        fontsize=8, color='white',
-                        weight='bold', zorder=11
-                    )
+                        ax_main.add_patch(circle)
+                        
+                        # ID del agente
+                        ax_main.text(
+                            estado.x, estado.y, str(estado.id),
+                            ha='center', va='center',
+                            fontsize=8, color='white',
+                            weight='bold', zorder=11
+                        )
             
             # Título con info clave
             total_activos = stats.vivos_activos + stats.menos_vivos_activos
@@ -326,26 +362,26 @@ class VisualizadorSimulacion:
             porcentaje_evacuado = (total_evacuados / total_agentes * 100) if total_agentes > 0 else 0
             
             info_text = f""" PASO {frame_num:3d}/{max_frames:3d}     
-AGENTES VIVOS:
-  Activos: {stats.vivos_activos}
-  Evacuados: {stats.vivos_evacuados}
+                AGENTES VIVOS:
+                Activos: {stats.vivos_activos}
+                Evacuados: {stats.vivos_evacuados}
 
-AGENTES MENOS VIVOS:
-  Activos: {stats.menos_vivos_activos}
-  Evacuados: {stats.menos_vivos_evacuados}
+                AGENTES MENOS VIVOS:
+                Activos: {stats.menos_vivos_activos}
+                Evacuados: {stats.menos_vivos_evacuados}
 
-CONFLICTOS:
-  En este paso: {stats.conflictos_en_paso}
-  Agentes involucrados: {stats.agentes_en_conflicto}
+                CONFLICTOS:
+                En este paso: {stats.conflictos_en_paso}
+                Agentes involucrados: {stats.agentes_en_conflicto}
 
-PROGRESO GLOBAL:
-  Total agentes: {total_agentes}
-  Evacuados: {total_evacuados}
-  Porcentaje: {porcentaje_evacuado:.1f}%
+                PROGRESO GLOBAL:
+                Total agentes: {total_agentes}
+                Evacuados: {total_evacuados}
+                Porcentaje: {porcentaje_evacuado:.1f}%
 
-FORMATO: {self.formato:12s} 
+                FORMATO: {self.formato:12s} 
 
-"""
+                """
             
             ax_info.text(
                 0.05, 0.95, info_text,
@@ -509,16 +545,19 @@ FORMATO: {self.formato:12s}
             stats = self.historial_estadisticas[paso]
             
             for estado in estados:
-                if estado.activo:
-                    color = self.COLORES.get(estado.tipo, '#888888')
-                    
-                    circle = Circle((estado.x, estado.y), 0.35,
-                                   color=color, alpha=0.8, zorder=10)
-                    ax.add_patch(circle)
-                    
-                    ax.text(estado.x, estado.y, str(estado.id),
-                           ha='center', va='center', fontsize=8,
-                           color='white', weight='bold', zorder=11)
+                # Solo dibujar si está activo y tiene posición válida
+                if estado.activo and estado.x is not None and estado.y is not None:
+                    # Verificar que la posición esté dentro del rango del escenario
+                    if 0 <= estado.x < width and 0 <= estado.y < height:
+                        color = self.COLORES.get(estado.tipo, '#888888')
+                        
+                        circle = Circle((estado.x, estado.y), 0.35,
+                                       color=color, alpha=0.8, zorder=10)
+                        ax.add_patch(circle)
+                        
+                        ax.text(estado.x, estado.y, str(estado.id),
+                               ha='center', va='center', fontsize=8,
+                               color='white', weight='bold', zorder=11)
             
             total_activos = stats.vivos_activos + stats.menos_vivos_activos
             ax.set_title(

@@ -19,9 +19,11 @@ def main():
 #       guardar_frame(campo, agentes, pasos) con el nuevo visualizador quedará obsoleto
         mover_agentes(agentes)
         pasos += 1
+        print(f"Tiempo actual: {pasos}")
         time.sleep(0.2)
 
     mostrar_matriz(campo, agentes)
+    
     print(f" los {len(agentes)} agentes llegaron a la puerta en {pasos} pasos.")
  
     """

@@ -23,7 +23,7 @@ class Agente:
         return self.conflictos - self.victorias  
         
         
-    def proponer_movimiento(self):
+    def proponer_movimiento(self, ocupadas):
         """
         Retorna la mejor celda candidata a moverse (nx, ny) para cada agente,
         sin mover todavía al agente.
@@ -61,8 +61,13 @@ class Agente:
                 mejores = ortogonales          
         
         # si hay varias celdas igual de buenas, i.e. la lista "mejores", elige una al azar
-        return random.choice(mejores)
+        destino = random.choice(mejores)
 
+        # si está ocupado, me quedo quieto
+        if destino != (self.x, self.y) and destino in ocupadas:
+            return (self.x, self.y)
+        return destino
+    
     def moverse(self, nueva_pos):
         """
         Mueve el agente a la posición nueva (si sigue activo).
@@ -85,11 +90,13 @@ def mover_agentes(agentes):
     """
     Calcula y ejecuta los movimientos de todos los agentes evitando colisiones.
     Reglas:
+    - Registramos las ocupadas
     - Cada agente propone un movimiento.
-    - Si varios quieren la misma celda, se elige uno al azar.
+    - Si varios quieren la misma celda, se elige con random pesado por velocidades.
     - Los demás se quedan quietos.
     """
-
+    posiciones_ocupadas = {(a.x, a.y) for a in agentes if a.activo}
+    
     for agente in agentes:
         if agente.activo:
             agente.tiempo_evacuacion += 1
@@ -100,7 +107,7 @@ def mover_agentes(agentes):
     propuestas = {} # creamos un diccionario vacío, las claves serán las posiciones de destino y los valores el agente que quiere ir a ese destino.
     for agente in agentes:
         if agente.activo:  # para cada agente activo
-            destino = agente.proponer_movimiento() # destino es la posicion que quiere agente (nx, ny)
+            destino = agente.proponer_movimiento(posiciones_ocupadas) # destino es la posicion que quiere agente (nx, ny)
             propuestas.setdefault(destino, []).append(agente)
             
         """

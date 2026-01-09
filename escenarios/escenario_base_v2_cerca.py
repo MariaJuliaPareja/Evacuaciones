@@ -1,20 +1,11 @@
-# escenarios/escenario_base_v2_cerca.py
-# Aquí, las personas rápidas están mas cerca de la puerta
-width = 7
-height = 7
+# escenarios/escenario_base_v2_cerca.py.py
+
+width = 18
+height = 20
 k_puertas = 1
-puertas = [(0,3)]
+puertas = [(0,9)]
 obstaculos = []
 
-agentes = [
-    (1,1,2), # Rápidos mas cerca de la puerta
-    (1,3,2), 
-    (2,1,2),
-    (2,2,2),
-    (2,4,2),
-    (3,1,1), # Lentos mas lejos de la puerta
-    (3,3,1),
-    (4,1,1),
-    (4,2,1),
-    (4,4,1),
-]
+columnas = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+filas = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
+agentes = [(x, y, 2 if x <= 8 else 1) for y in filas for x in columnas]

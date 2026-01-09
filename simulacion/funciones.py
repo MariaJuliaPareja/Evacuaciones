@@ -45,7 +45,10 @@ def cargar_escenario(): # común
         "2": "avion",
         "3": "sala_de_clases",
         "4": "escenario_base_v2_cerca",
-        "5": "escenario_base_v1_cerca"
+        "5": "escenario_base_v1_cerca",
+        "6": "fila_india",
+        "7": "escenario_base_v2_arriba",
+        "8": "escenario_base_v1_arriba"
     }
 
     print("--- Escenarios disponibles ---")
@@ -54,9 +57,12 @@ def cargar_escenario(): # común
     print("3) Sala de clases")
     print("4) Los rápidos cerca de la puerta")
     print("5) Los lentos cerca de la puerta")
+    print("6) Fila india")
+    print("7) Rápidos a la derecha y lentos a la izquierda")
+    print("8) Lentos a la derecha y rápidos a la izquierda")
     print("------------------------------")
 
-    eleccion = input("Elige un escenario (1-5): ").strip()
+    eleccion = input("Elige un escenario (1-8): ").strip()
 
     if eleccion not in escenarios_disponibles:
         raise ValueError("Escenario no válido.")
@@ -68,9 +74,9 @@ def cargar_escenario(): # común
 
     print(f"\nEscenario cargado: {nombre_modulo}\n")
     return modulo
-
+    """
 def mostrar_matriz(campo, agentes):
-    """Función para visualizar la simulación en la terminal"""
+   
     os.system("clear")  
     for y in range(campo.height):
         fila = ""
@@ -89,6 +95,25 @@ def mostrar_matriz(campo, agentes):
                 fila += ". "
         print(fila)
     print(f"Agentes activos: {sum(a.activo for a in agentes)}\n")
+    """
+def mostrar_matriz(campo, agentes): # para main_visual.py
+    """Función para visualizar la simulación en la terminal"""
+    os.system("clear")  
+    for y in range(campo.height):
+        fila = ""
+        for x in range(campo.width):
+            if any(a.x == x and a.y == y and a.activo for a in agentes):
+                fila += "A "
+            elif campo.valores[y, x] == 500:
+                fila += "█ "
+            elif campo.valores[y, x] == 0:
+                fila += "⎯ "
+            else:
+                fila += ". "
+        print(fila)
+    print(f"Agentes activos: {sum(a.activo for a in agentes)}\n")
+   # print(f"Tiempo: ")
+
 
 def guardar_frame(campo, agentes, paso): # para guardar data del simulador desde main_visual.py
     """Función para guardar cada frame como imagen"""

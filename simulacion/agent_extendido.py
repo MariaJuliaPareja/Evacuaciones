@@ -23,7 +23,8 @@ class AgentExtendido:
     def __init__(self, 
                  type: str = "defaults",
                  agent_type: str = "vivo",  # 'vivo' o 'menos_vivo'
-                 floor_field = None):
+                 floor_field = None,
+                 path_selector = None): #NODO
         """
         Inicializa agente extendido.
         Parámetros:
@@ -46,7 +47,11 @@ class AgentExtendido:
         self.conflictos_totales: int = 0
         self.conflictos_perdidos: int = 0
         self.ansiedad: int = 0   
-
+        # NODOS
+        self.path_selector = path_selector  
+        self.ruta_planificada = None  
+        self.pasos_desde_recalculo = 0  
+        self.usa_enrutamiento_inteligente = (path_selector is not None)  
         AgentExtendido.instances.append(self)
     
     
@@ -57,10 +62,21 @@ class AgentExtendido:
         snapshot = [copy.deepcopy(agent) for agent in cls.instances]
         cls.history.append(snapshot)
     
-    # ========== NUEVOS MÉTODOS AVANZADOS ==========
-    
-    def proponer_movimiento(self) -> Tuple[int, int]:
+    def proponer_movimiento(self) -> Tuple[int, int]: #PARA LOS NODOS
         """
+        Logica para mover agente EN NODO
+        """
+ 
+        if not self.activo or self.pos_x is None or self.pos_y is None:
+            return (self.pos_x, self.pos_y)
+        
+        if self.usa_enrutamiento_inteligente:
+            return self._movimiento_con_path_selector()
+        return self._movimiento_greedy_floor_field()
+    
+    def _movimiento_greedy_floor_field(self) -> Tuple[int, int]: #PARA LA GRILLA
+        """
+        Comportamiento ORIGINAL: seguir floor field de manera greedy.
         Propone el mejor movimiento según floor_field.
         
         Si NO tiene floor_field, retorna posición actual.
@@ -68,16 +84,12 @@ class AgentExtendido:
         
         Retorna:(x, y) : Tupla con la posición propuesta
         """
-        if not self.activo or self.floor_field is None:
+        if self.floor_field is None:
             return (self.pos_x, self.pos_y)
         
-        if self.pos_x is None or self.pos_y is None:
-            return (self.pos_x, self.pos_y)
-        
-        # 8 direcciones posibles (horizontal, vertical, diagonal)
         pasos = [
-            (0, 1), (1, 0), (0, -1), (-1, 0),  # H/V
-            (1, 1), (1, -1), (-1, 1), (-1, -1)  # Diagonales
+            (0, 1), (1, 0), (0, -1), (-1, 0),
+            (1, 1), (1, -1), (-1, 1), (-1, -1)
         ]
         
         mejor_valor = self.floor_field.valores[self.pos_y, self.pos_x]
@@ -86,7 +98,6 @@ class AgentExtendido:
         for dx, dy in pasos:
             nx, ny = self.pos_x + dx, self.pos_y + dy
             
-            # Verificar límites
             if 0 <= nx < self.floor_field.width and 0 <= ny < self.floor_field.height:
                 v = self.floor_field.valores[ny, nx]
                 
@@ -96,9 +107,50 @@ class AgentExtendido:
                 elif np.isclose(v, mejor_valor):
                     mejores.append((nx, ny))
         
-        # Si hay empate, elegir al azar
         return random.choice(mejores)
-    
+
+    def _movimiento_con_path_selector(self) -> Tuple[int, int]: #MOVIMIENTO EN NODO
+        """
+        Movimiento inteligente usando PathSelector con A*.
+        Estrategia:
+        1. Si no tiene ruta o debe recalcular -> calcular con A*
+        2. Seguir ruta planificada
+        3. Si ruta falla -> fallback a greedy
+        """
+        pos_actual = (self.pos_x, self.pos_y)
+        # ¿Necesita calcular/recalcular ruta? CAMBIAR LOGICA DE RUTA
+        if (self.ruta_planificada is None or
+            len(self.ruta_planificada) <= 1 or
+            self.path_selector.debe_recalcular_ruta(self, self.ruta_planificada)):
+            # Encontrar mejor puerta
+            puertas = self.floor_field.puertas
+            mejor_puerta = self.path_selector.encontrar_mejor_puerta(pos_actual, puertas)
+            # Calcular ruta con A*
+            self.ruta_planificada = self.path_selector.encontrar_ruta_a_star(
+                pos_actual, 
+                mejor_puerta
+            )
+            
+            self.pasos_desde_recalculo = 0
+            
+            # Si no se encontró ruta, usar greedy como fallback
+            if self.ruta_planificada is None:
+                return self._movimiento_greedy_floor_field()
+        
+        # Seguir la ruta planificada
+        if self.ruta_planificada and len(self.ruta_planificada) > 1:
+            # El siguiente nodo en la ruta
+            siguiente = self.ruta_planificada[1]
+            
+            # Avanzar en la ruta
+            self.ruta_planificada.pop(0)
+            self.pasos_desde_recalculo += 1
+            
+            return siguiente
+        
+        # Fallback
+        return self._movimiento_greedy_floor_field()
+
     def mover_a(self, nueva_x: int, nueva_y: int):
         """
         Mueve el agente a la nueva posición.

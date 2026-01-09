@@ -1,4 +1,4 @@
-# Sistema de Visualización de Evacuación - Documentación
+# Sistema de Visualización de Evacuación - Documentación (DESACTUALIZADA)
 ## Descripción General
 Este sistema proporciona una plataforma completa para simular y visualizar evacuaciones con clasificación de agentes. Los agentes se clasifican como "vivos" (verde) o "menos vivos" (rojo), con priorización en conflictos. 
 ## Características Principales

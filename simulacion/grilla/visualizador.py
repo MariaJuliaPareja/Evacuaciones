@@ -110,9 +110,9 @@ class VisualizadorSimulacion:
                 stats_final = self.historial_estadisticas[-1]
                 total_evacuados = stats_final.vivos_evacuados + stats_final.menos_vivos_evacuados
                 print(f"\nEvacuados en último paso:")
-                print(f"  Vivos: {stats_final.vivos_evacuados}")
-                print(f"  Menos vivos: {stats_final.menos_vivos_evacuados}")
-                print(f"  Total: {total_evacuados}")
+                print(f"Vivos: {stats_final.vivos_evacuados}")
+                print(f"Menos vivos: {stats_final.menos_vivos_evacuados}")
+                print(f"Total: {total_evacuados}")
         
         except FileNotFoundError:
             raise FileNotFoundError(f"No se encontró: {self.archivo_pkl}")

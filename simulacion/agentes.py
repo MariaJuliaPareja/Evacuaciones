@@ -1,11 +1,11 @@
-#agentes.py clase de agentes, por Miguel Acevedo y Emilia Partarrieu 12/25
-#Modificación del 07/01/2026
+# agentes.py clase de agentes, por Miguel Acevedo y Emilia Partarrieu 12/25
+# Modificación del 09/01/2026 para compatibilidad con visualizador
 import numpy as np
 import random
 
 class Agente:
     agentes = []
-    def __init__(self, x, y, floor_field, velocidad= None):
+    def __init__(self, x, y, floor_field, velocidad=None):
         self.x = x
         self.y = y
         self.floor_field = floor_field
@@ -14,14 +14,30 @@ class Agente:
         self.victorias = 0
         self.conflictos = 0
         self.tiempo_evacuacion = 0 
-        self.velocidad = velocidad if velocidad is not None else random.choice([1, 2]) #1 Lento, 2 Rápido
+        self.ansiedad = 0 
+        self.velocidad = velocidad if velocidad is not None else random.choice([1, 2]) # 1 Lento, 2 Rápido        # Asignación automática de tipo para el visualizador:
+        # Velocidad 2 = 'vivo' (Verde), Velocidad 1 = 'menos_vivo' (Rojo)
+        self.tipo = 'vivo' if self.velocidad == 2 else 'menos_vivo'
         self.id = len(Agente.agentes)
         Agente.agentes.append(self)
         
+    # ALIAS TEMPORAL PARA COMPATIBILIDAD CON VISUALIZADOR
     @property
-    def derrotas(self):
+    def pos_x(self): return self.x
+    
+    @property
+    def pos_y(self): return self.y
+
+    @property
+    def conflictos_totales(self): return self.conflictos
+
+    @property
+    def conflictos_perdidos(self):
         return self.conflictos - self.victorias  
-        
+    
+    @property
+    def derrotas(self): # Alias adicional que ya tenías
+        return self.conflictos - self.victorias  
         
     def proponer_movimiento(self, ocupadas):
         """
@@ -75,61 +91,59 @@ class Agente:
         if not self.activo:
             return
         
-         # aquí verificamos si la nueva posición es distinta a la actual
-        if (self.x, self.y) != nueva_pos:
-            self.if_changes = True
-        else:
-            self.if_changes = False
+        # aquí verificamos si la nueva posición es distinta a la actual
+        self.if_changes = (self.x, self.y) != nueva_pos
         
-        self.x, self.y = nueva_pos  # nueva_pos se definirá en el main para resolver conflictos
-        if self.floor_field.valores[self.y, self.x] == 0: # Si llega a una puerta (valor = 1)
+        self.x, self.y = nueva_pos  # nueva_pos se definirá en el mover_agentes para resolver conflictos
+        if self.floor_field.valores[self.y, self.x] == 0: # Si llega a una puerta (valor = 0)
             self.activo = False # deja de estar activo
 
 
 def mover_agentes(agentes):
     """
     Calcula y ejecuta los movimientos de todos los agentes evitando colisiones.
-    Reglas:
-    - Registramos las ocupadas
-    - Cada agente propone un movimiento.
-    - Si varios quieren la misma celda, se elige con random pesado por velocidades.
-    - Los demás se quedan quietos.
+    Retorna un diccionario de estadísticas para el visualizador.
     """
     posiciones_ocupadas = {(a.x, a.y) for a in agentes if a.activo}
+    
+    # Diccionario para capturar estadísticas del paso actual
+    stats_paso = {
+        'conflictos_totales': 0,
+        'agentes_en_conflicto': 0
+    }
     
     for agente in agentes:
         if agente.activo:
             agente.tiempo_evacuacion += 1
-             # Reiniciado de if_changes: Por defecto, asumimos que no se ha movido en este nuevo turno
             agente.if_changes = False 
             
     # Luego todos proponen su movimiento
-    propuestas = {} # creamos un diccionario vacío, las claves serán las posiciones de destino y los valores el agente que quiere ir a ese destino.
+    propuestas = {} 
     for agente in agentes:
-        if agente.activo:  # para cada agente activo
-            destino = agente.proponer_movimiento(posiciones_ocupadas) # destino es la posicion que quiere agente (nx, ny)
+        if agente.activo:  
+            destino = agente.proponer_movimiento(posiciones_ocupadas)
             propuestas.setdefault(destino, []).append(agente)
             
-        """
-        para cada destino, appendeamos en una lista inicialmente vacia los agentes
-        que quieren moverse a ese destino. esto nos da un diccionario propuestas
-        donde cada destino toma el valor de una lista con los agentes que desean ir ahí. 
-        """
-    # el resultado de esta sección de código es un diccionario llamado propuestas
-
     # Resolución de conflictos:
-    # y contadores (victoria y conflictos)
     for destino, lista_agentes in propuestas.items():
         if len(lista_agentes) == 1:
             lista_agentes[0].moverse(destino)
         else:
+            # Registrar conflicto para el visualizador
+            stats_paso['conflictos_totales'] += 1
+            stats_paso['agentes_en_conflicto'] += len(lista_agentes)
+            
             for a in lista_agentes:
                 a.conflictos += 1 
+                
             # Mayor velocidad --> Mayor posibilidad de ganar
             pesos = [a.velocidad for a in lista_agentes]
-            elegido = random.choices(lista_agentes, weights=pesos, k=1)[0] # Random con pesos
+            elegido = random.choices(lista_agentes, weights=pesos, k=1)[0] 
             elegido.victorias += 1 
             elegido.moverse(destino)
+            
             for otro in lista_agentes:
                 if otro != elegido:
-                    otro.moverse((otro.x, otro.y))  # el otro se queda quieto (cede el paso)
+                    otro.moverse((otro.x, otro.y))  # el otro se queda quieto
+                    
+    return stats_paso 

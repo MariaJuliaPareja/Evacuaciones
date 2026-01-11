@@ -25,7 +25,7 @@ sys.path.insert(0, '/home/claude')
 from simulacion.floor_field import Floor_field 
 from simulacion.agentes import Agente, mover_agentes
 from simulacion.funciones import cargar_escenario
-from simulacion_logger import SimulacionLogger
+from simulacion.simulacion_logger import SimulacionLogger
 
 
 def ejecutar_simulacion_con_logging(

@@ -1,5 +1,5 @@
 # agentes.py clase de agentes, por Miguel Acevedo y Emilia Partarrieu 12/25
-# Modificación del 09/01/2026 para compatibilidad con visualizador
+# Modificación del 11/01/2026, en busca de compatibilidad con visualizador
 import numpy as np
 import random
 
@@ -15,13 +15,14 @@ class Agente:
         self.conflictos = 0
         self.tiempo_evacuacion = 0 
         self.ansiedad = 0 
-        self.velocidad = velocidad if velocidad is not None else random.choice([1, 2]) # 1 Lento, 2 Rápido        # Asignación automática de tipo para el visualizador:
+        self.velocidad = velocidad if velocidad is not None else random.choice([1, 2]) # 1 Lento, 2 Rápido    # Asignación automática de tipo para el visualizador:
         # Velocidad 2 = 'vivo' (Verde), Velocidad 1 = 'menos_vivo' (Rojo)
         self.tipo = 'vivo' if self.velocidad == 2 else 'menos_vivo'
         self.id = len(Agente.agentes)
         Agente.agentes.append(self)
         
-    # ALIAS TEMPORAL PARA COMPATIBILIDAD CON VISUALIZADOR
+    # ALIAS TEMPORAL PARA COMPATIBILIDAD CON VISUALIZADOR, no quiero que esta
+    # sea la solucion definitica, si no compatibilidad en nombre de las variables
     @property
     def pos_x(self): return self.x
     

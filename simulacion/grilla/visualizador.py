@@ -29,6 +29,7 @@ class EstadoAgente:
     conflictos_totales: int = 0
     conflictos_perdidos: int = 0
     ansiedad: int = 0
+    current_path: List[Tuple[int, int]] = None  # Ruta planificada A*
 
 
 @dataclass  
@@ -120,9 +121,38 @@ class VisualizadorSimulacion:
             raise ValueError(f"Error al cargar: {e}")
     
     def _cargar_formato_simulacion_logger(self, datos: dict):
-        """Carga formato SimulationLogger (dict complejo)"""
+        """
+        Carga formato SimulationLogger (dict complejo).
+        Convierte EstadoAgente del logger a formato interno con current_path.
+        """
         self.configuracion = datos['configuracion']
-        self.historial_agentes = datos['historial_agentes']
+        
+        # Convertir historial_agentes si es necesario para incluir current_path
+        historial_raw = datos['historial_agentes']
+        self.historial_agentes = []
+        
+        for paso_agentes in historial_raw:
+            estados_paso = []
+            for agent_estado in paso_agentes:
+                # Si ya es EstadoAgente, usar directamente
+                if isinstance(agent_estado, EstadoAgente):
+                    estados_paso.append(agent_estado)
+                else:
+                    # Convertir desde dataclass o dict
+                    estado = EstadoAgente(
+                        id=getattr(agent_estado, 'id', agent_estado.get('id', 0) if isinstance(agent_estado, dict) else 0),
+                        x=getattr(agent_estado, 'x', agent_estado.get('x', 0) if isinstance(agent_estado, dict) else 0),
+                        y=getattr(agent_estado, 'y', agent_estado.get('y', 0) if isinstance(agent_estado, dict) else 0),
+                        tipo=getattr(agent_estado, 'tipo', agent_estado.get('tipo', 'vivo') if isinstance(agent_estado, dict) else 'vivo'),
+                        activo=getattr(agent_estado, 'activo', agent_estado.get('activo', True) if isinstance(agent_estado, dict) else True),
+                        conflictos_totales=getattr(agent_estado, 'conflictos_totales', agent_estado.get('conflictos_totales', 0) if isinstance(agent_estado, dict) else 0),
+                        conflictos_perdidos=getattr(agent_estado, 'conflictos_perdidos', agent_estado.get('conflictos_perdidos', 0) if isinstance(agent_estado, dict) else 0),
+                        ansiedad=getattr(agent_estado, 'ansiedad', agent_estado.get('ansiedad', 0) if isinstance(agent_estado, dict) else 0),
+                        current_path=getattr(agent_estado, 'current_path', agent_estado.get('current_path', None) if isinstance(agent_estado, dict) else None)
+                    )
+                    estados_paso.append(estado)
+            self.historial_agentes.append(estados_paso)
+        
         self.historial_estadisticas = datos['historial_estadisticas']
     
     def _cargar_formato_agent_extendido(self, datos: list):
@@ -192,6 +222,12 @@ class VisualizadorSimulacion:
                     if pos_x == 0 and pos_y == 0 and not hasattr(agent, 'pos_x'):
                         activo = False
                 
+                # Obtener ruta planificada si existe
+                current_path = getattr(agent, 'current_path', None)
+                # Si no existe current_path, intentar con ruta_planificada (compatibilidad)
+                if current_path is None:
+                    current_path = getattr(agent, 'ruta_planificada', None)
+                
                 # Crear estado
                 estado = EstadoAgente(
                     id=getattr(agent, 'id', len(estados_paso)),
@@ -201,7 +237,8 @@ class VisualizadorSimulacion:
                     activo=activo,
                     conflictos_totales=getattr(agent, 'conflictos_totales', 0),
                     conflictos_perdidos=getattr(agent, 'conflictos_perdidos', 0),
-                    ansiedad=getattr(agent, 'ansiedad', 0)
+                    ansiedad=getattr(agent, 'ansiedad', 0),
+                    current_path=current_path
                 )
                 estados_paso.append(estado)
             
@@ -219,9 +256,19 @@ class VisualizadorSimulacion:
             )
             self.historial_estadisticas.append(stats)
     
-    def crear_animacion_interactiva(self):
+    def crear_animacion_interactiva(self, show_paths: bool = False):
+        """
+        Crea animación interactiva con controles.
+        
+        Parámetros:
+        show_paths : bool
+            Si True, muestra las rutas planificadas A* de los agentes
+        """
         fig = plt.figure(figsize=(16, 12))
-        fig.suptitle('Simulación de Evacuación - Visualizador Interactivo', fontsize=16, weight='bold')
+        title = 'Simulación de Evacuación - Visualizador Interactivo'
+        if show_paths:
+            title += ' (Rutas A* visibles)'
+        fig.suptitle(title, fontsize=16, weight='bold')
         # Layout con gridspec
         gs = fig.add_gridspec(20, 20, hspace=0.3, wspace=0.3)
         # Áreas principales
@@ -309,6 +356,18 @@ class VisualizadorSimulacion:
                 
             estados = self.historial_agentes[frame_num]
             stats = self.historial_estadisticas[frame_num]
+            
+            # Dibujar rutas si está habilitado
+            if show_paths:
+                for estado in estados:
+                    if estado.activo and estado.current_path is not None:
+                        path = estado.current_path
+                        if len(path) > 1:
+                            anxiety = estado.ansiedad
+                            color = self._get_color_by_anxiety(anxiety)
+                            xs, ys = zip(*path)
+                            ax_main.plot(xs, ys, color=color, alpha=0.3, linewidth=1.5,
+                                       linestyle='--', zorder=1)
             
             # Dibujar agentes activos
             for estado in estados:
@@ -502,9 +561,19 @@ class VisualizadorSimulacion:
         return anim
     
     def crear_animacion(self, intervalo: int = 200, guardar_video: bool = False,
-                       nombre_video: str = 'simulacion.mp4'):
+                       nombre_video: str = 'simulacion.mp4', show_paths: bool = False):
         """
-        Animación simple sin controles 
+        Animación simple sin controles.
+        
+        Parámetros:
+        intervalo : int
+            Intervalo entre frames en milisegundos
+        guardar_video : bool
+            Si True, guarda el video en archivo
+        nombre_video : str
+            Nombre del archivo de video
+        show_paths : bool
+            Si True, muestra las rutas planificadas A* de los agentes
         """
         fig, ax = plt.subplots(figsize=(12, 10))
         
@@ -540,10 +609,23 @@ class VisualizadorSimulacion:
                                edgecolor='orange', linewidth=2)
                 ax.add_patch(rect)
             
-            # Agentes
+            # Agentes y rutas
             estados = self.historial_agentes[paso]
             stats = self.historial_estadisticas[paso]
             
+            # Primero dibujar rutas si está habilitado
+            if show_paths:
+                for estado in estados:
+                    if estado.activo and estado.current_path is not None:
+                        path = estado.current_path
+                        if len(path) > 1:
+                            anxiety = estado.ansiedad
+                            color = self._get_color_by_anxiety(anxiety)
+                            xs, ys = zip(*path)
+                            ax.plot(xs, ys, color=color, alpha=0.4, linewidth=1.5,
+                                   linestyle='--', zorder=1)
+            
+            # Luego dibujar agentes
             for estado in estados:
                 # Solo dibujar si está activo y tiene posición válida
                 if estado.activo and estado.x is not None and estado.y is not None:
@@ -560,10 +642,10 @@ class VisualizadorSimulacion:
                                color='white', weight='bold', zorder=11)
             
             total_activos = stats.vivos_activos + stats.menos_vivos_activos
-            ax.set_title(
-                f'Paso: {paso} | Activos: {total_activos}',
-                fontsize=14, weight='bold'
-            )
+            title = f'Paso: {paso} | Activos: {total_activos}'
+            if show_paths:
+                title += ' | Rutas A* mostradas'
+            ax.set_title(title, fontsize=14, weight='bold')
             
             ax.set_xlabel('X', fontsize=12)
             ax.set_ylabel('Y', fontsize=12)
@@ -586,6 +668,160 @@ class VisualizadorSimulacion:
         plt.show()
         
         return anim
+    
+    def _get_color_by_anxiety(self, anxiety_level: float) -> str:
+        """
+        Retorna color basado en nivel de ansiedad.
+        
+        Parámetros:
+        anxiety_level : float
+            Nivel de ansiedad (0-100)
+            
+        Returns:
+        str : Color en formato matplotlib (nombre o hex)
+        """
+        if anxiety_level < 30:
+            return 'green'  # Baja ansiedad
+        elif anxiety_level < 70:
+            return 'yellow'  # Ansiedad óptima
+        else:
+            return 'red'  # Alta ansiedad/pánico
+    
+    def visualizar_rutas_agentes(self, frame_index: int, output_file: str = None):
+        """
+        Visualiza las rutas planificadas de los agentes en un frame específico.
+        
+        Parámetros:
+        frame_index : int
+            Índice del frame a visualizar
+        output_file : str, opcional
+            Ruta para guardar la imagen. Si None, muestra la figura.
+        """
+        if frame_index < 0 or frame_index >= len(self.historial_agentes):
+            raise ValueError(f"Frame index {frame_index} fuera de rango [0, {len(self.historial_agentes)-1}]")
+        
+        frame = self.historial_agentes[frame_index]
+        
+        fig, ax = plt.subplots(figsize=(14, 12))
+        
+        width = self.configuracion['width']
+        height = self.configuracion['height']
+        puertas = self.configuracion['puertas']
+        obstaculos = self.configuracion['obstaculos']
+        
+        # Configurar ejes
+        ax.set_xlim(-0.5, width - 0.5)
+        ax.set_ylim(-0.5, height - 0.5)
+        ax.set_aspect('equal')
+        ax.invert_yaxis()
+        
+        # Dibujar grilla
+        for i in range(width + 1):
+            ax.axvline(i - 0.5, color='lightgray', linewidth=0.5, alpha=0.3)
+        for j in range(height + 1):
+            ax.axhline(j - 0.5, color='lightgray', linewidth=0.5, alpha=0.3)
+        
+        # Floor field background (si está disponible en datos)
+        # Intentar obtener floor_field desde configuración o datos
+        ff_data = None
+        if hasattr(self, 'datos') and self.datos:
+            ff_data = self.datos.get('floor_field')
+        if ff_data is None and hasattr(self, 'configuracion'):
+            ff_data = self.configuracion.get('floor_field')
+        
+        if ff_data is not None:
+            # ff_data debería ser un array numpy 2D
+            if isinstance(ff_data, np.ndarray):
+                ax.imshow(ff_data, cmap='gray_r', alpha=0.2, 
+                         extent=[-0.5, width - 0.5, height - 0.5, -0.5],
+                         origin='upper')
+        
+        # Dibujar obstáculos
+        for x, y in obstaculos:
+            rect = Rectangle(
+                (x-0.5, y-0.5), 1, 1,
+                facecolor=self.COLORES['obstaculo'],
+                edgecolor='black', linewidth=1
+            )
+            ax.add_patch(rect)
+        
+        # Dibujar puertas
+        for x, y in puertas:
+            rect = Rectangle(
+                (x-0.5, y-0.5), 1, 1,
+                facecolor=self.COLORES['puerta'],
+                edgecolor='orange', linewidth=2
+            )
+            ax.add_patch(rect)
+            ax.text(x, y, 'P', ha='center', va='center', 
+                   fontsize=12, weight='bold', color='black')
+        
+        # Dibujar rutas de cada agente activo
+        routes_drawn = 0
+        for agent_data in frame:
+            if agent_data.activo and agent_data.current_path is not None:
+                path = agent_data.current_path
+                if len(path) > 0:
+                    anxiety = agent_data.ansiedad
+                    
+                    # Color basado en ansiedad
+                    color = self._get_color_by_anxiety(anxiety)
+                    
+                    # Dibujar ruta
+                    if len(path) > 1:
+                        xs, ys = zip(*path)
+                        ax.plot(xs, ys, color=color, alpha=0.6, linewidth=2,
+                               linestyle='--', marker='o', markersize=4,
+                               label=f'Agente {agent_data.id}' if routes_drawn < 5 else '')
+                    else:
+                        # Ruta de un solo punto
+                        ax.plot(path[0][0], path[0][1], 'o', color=color, markersize=6)
+                    
+                    # Marcar posición actual del agente
+                    pos = (agent_data.x, agent_data.y)
+                    ax.plot(pos[0], pos[1], 'o', color=color, markersize=10,
+                           markeredgecolor='black', markeredgewidth=1.5)
+                    
+                    # Etiqueta del agente
+                    ax.text(pos[0], pos[1] + 0.3, str(agent_data.id),
+                           ha='center', va='bottom', fontsize=8,
+                           weight='bold', color='black',
+                           bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7))
+                    
+                    routes_drawn += 1
+        
+        # Título
+        stats = self.historial_estadisticas[frame_index]
+        total_activos = stats.vivos_activos + stats.menos_vivos_activos
+        ax.set_title(
+            f'Rutas Planificadas A* - Paso {frame_index}\n'
+            f'Agentes activos: {total_activos} | Rutas mostradas: {routes_drawn}',
+            fontsize=14, weight='bold'
+        )
+        
+        ax.set_xlabel('X Coordinate', fontsize=12)
+        ax.set_ylabel('Y Coordinate', fontsize=12)
+        ax.grid(True, alpha=0.3)
+        
+        # Leyenda de colores por ansiedad
+        from matplotlib.patches import Patch
+        legend_elements = [
+            Patch(facecolor='green', label='Baja ansiedad (0-30)'),
+            Patch(facecolor='yellow', label='Ansiedad óptima (30-70)'),
+            Patch(facecolor='red', label='Alta ansiedad (70-100)'),
+            Patch(facecolor=self.COLORES['puerta'], label='Puerta'),
+            Patch(facecolor=self.COLORES['obstaculo'], label='Obstáculo')
+        ]
+        ax.legend(handles=legend_elements, loc='upper left', fontsize=9)
+        
+        plt.tight_layout()
+        
+        if output_file:
+            plt.savefig(output_file, dpi=150, bbox_inches='tight')
+            print(f"Visualización guardada en: {output_file}")
+            plt.close()
+        else:
+            plt.show()
     
     def grafico_evacuacion_temporal(self, guardar: bool = False,
                                    nombre_archivo: str = 'evacuacion_temporal.png'):

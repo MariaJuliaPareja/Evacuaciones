@@ -168,6 +168,46 @@ class SimulacionLogger:
         )
         self.historial_estadisticas.append(estadisticas)
     
+    def log_path_selector_stats(self, path_selector):
+        """
+        Registra estadísticas del PathSelector en el paso actual.
+        
+        Parámetros:
+        path_selector : PathSelector
+            Instancia del PathSelector con estadísticas a registrar
+        """
+        if path_selector is None:
+            return
+        
+        stats = path_selector.get_statistics()
+        
+        # Crear diccionario de estadísticas de PathSelector
+        path_selector_stats = {
+            'total_a_star_calls': stats.get('total_a_star_calls', 0),
+            'cache_hits': stats.get('cache_hits', 0),
+            'cache_hit_rate': stats.get('cache_hit_rate', 0.0),
+            'avg_nodes_explored': stats.get('avg_nodes_explored', 0.0),
+            'max_nodes_explored': stats.get('max_nodes_explored', 0),
+            'total_paths_calculated': stats.get('total_paths_calculated', 0),
+            'recalculations_by_anxiety': stats.get('recalculations_by_anxiety', {'low': 0, 'medium': 0, 'high': 0})
+        }
+        
+        # Inicializar lista si no existe
+        if not hasattr(self, 'path_selector_stats'):
+            self.path_selector_stats = []
+        
+        # Asegurar que la lista tenga el mismo tamaño que historial_estadisticas
+        # Si no hay pasos registrados aún, crear un paso inicial
+        target_size = len(self.historial_estadisticas) if self.historial_estadisticas else 1
+        while len(self.path_selector_stats) < target_size:
+            self.path_selector_stats.append({})
+        
+        # Actualizar el último paso (o el único si no hay pasos registrados)
+        if self.path_selector_stats:
+            self.path_selector_stats[-1] = path_selector_stats
+        else:
+            self.path_selector_stats.append(path_selector_stats)
+    
     def guardar_pkl(self, nombre_archivo: str):
         """
         Guarda todos los datos de la simulación en un archivo PKL.
@@ -186,6 +226,10 @@ class SimulacionLogger:
             'historial_agentes': self.historial_agentes,
             'historial_estadisticas': self.historial_estadisticas
         }
+        
+        # Agregar estadísticas de PathSelector si están disponibles
+        if hasattr(self, 'path_selector_stats') and self.path_selector_stats:
+            datos['path_selector_stats'] = self.path_selector_stats
         
         # Crear directorio si no existe
         path = Path(nombre_archivo)

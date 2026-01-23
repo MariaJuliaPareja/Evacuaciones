@@ -1,12 +1,24 @@
 from agent_extendido import AgentExtendido, mover_agentes_con_conflictos
 import pickle
 import sys
+import random
 
 try:
     from floor_field import Floor_field
     FLOOR_FIELD_DISPONIBLE = True
 except:
     FLOOR_FIELD_DISPONIBLE = False
+
+try:
+    import sys
+    import os
+    # Agregar ruta para importar PathSelector
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'nodos'))
+    from path_selector import PathSelector
+    PATH_SELECTOR_DISPONIBLE = True
+except ImportError:
+    PATH_SELECTOR_DISPONIBLE = False
+    print("ADVERTENCIA: PathSelector no disponible. Usando comportamiento legacy.")
 
 
 # SIMULACIÓN SIMPLE
@@ -101,9 +113,16 @@ def simular_simple(num_pasos=10):
 
 # SIMULACIÓN CON FLOOR FIELD
 
-def simular_evacuacion(escenario='basico'):
+def simular_evacuacion(escenario='basico', usar_path_selector=True):
     """
     Simulación con floor_field y movimiento automático.
+    Integra PathSelector para navegación inteligente con A* y selección por ansiedad.
+    
+    Parámetros:
+    escenario : str
+        Nombre del escenario ('basico', 'obstaculos', 'sala')
+    usar_path_selector : bool
+        Si True, usa PathSelector para navegación inteligente (por defecto True)
     """
     if not FLOOR_FIELD_DISPONIBLE:
         print("\nfloor_field.py no disponible")
@@ -141,6 +160,10 @@ def simular_evacuacion(escenario='basico'):
     
     print("\n" + "="*60)
     print(f"SIMULACIÓN: {escenario.upper()}")
+    if usar_path_selector and PATH_SELECTOR_DISPONIBLE:
+        print("  Usando PathSelector (A* + selección por ansiedad)")
+    else:
+        print("  Usando comportamiento legacy (greedy)")
     print("="*60)
     
     # Limpia
@@ -152,34 +175,58 @@ def simular_evacuacion(escenario='basico'):
     print(f"Puertas: {config['puertas']}")
     print(f"Obstáculos: {len(config['obstaculos'])}")
     
+    # Crear PathSelector UNA VEZ al inicio (si está disponible y se solicita)
+    path_selector = None
+    if usar_path_selector and PATH_SELECTOR_DISPONIBLE:
+        try:
+            path_selector = PathSelector(ff, umbral_recalculo=0.6, anxiety_thresholds=(30, 70))
+            print("PathSelector creado exitosamente")
+        except Exception as e:
+            print(f"ADVERTENCIA: Error al crear PathSelector: {e}")
+            print("  Continuando con comportamiento legacy")
+            path_selector = None
+    
     # Crear agentes (60% vivos, 40% menos_vivos)
-    import random
     num_vivos = int(config['num_agentes'] * 0.6)
     
-    for i in range(num_vivos):
-        AgentExtendido(agent_type='vivo', floor_field=ff)
-    
-    for i in range(config['num_agentes'] - num_vivos):
-        AgentExtendido(agent_type='menos_vivo', floor_field=ff)
-    
-    # Posiciones aleatorias en mitad derecha - asegurar que no haya dos agentes en la misma celda
+    # Preparar posiciones iniciales
+    posiciones_iniciales = []
+    tipos_agentes = []
     posiciones_ocupadas = set()
-    for agent in AgentExtendido.instances:
+    
+    # Generar posiciones aleatorias en mitad derecha
+    for i in range(config['num_agentes']):
         intentos = 0
         max_intentos = 100
         while intentos < max_intentos:
-            agent.pos_x = random.randint(width//2, width-2)
-            agent.pos_y = random.randint(1, height-2)
-            pos = (agent.pos_x, agent.pos_y)
+            x = random.randint(width//2, width-2)
+            y = random.randint(1, height-2)
+            pos = (x, y)
             
-            # Verificar que no esté en un obstáculo ni ocupado por otro agente
+            # Verificar que no esté en un obstáculo ni ocupado
             if pos not in config['obstaculos'] and pos not in posiciones_ocupadas:
                 posiciones_ocupadas.add(pos)
+                posiciones_iniciales.append((x, y))
+                # Asignar tipo: primeros num_vivos son 'vivo', resto 'menos_vivo'
+                tipos_agentes.append('vivo' if i < num_vivos else 'menos_vivo')
                 break
             intentos += 1
         
         if intentos >= max_intentos:
-            print(f"ADVERTENCIA: No se pudo asignar posición única al agente {agent.id}")
+            print(f"ADVERTENCIA: No se pudo asignar posición única al agente {i}")
+            # Usar posición por defecto si falla
+            posiciones_iniciales.append((width-1, height-1))
+            tipos_agentes.append('vivo' if i < num_vivos else 'menos_vivo')
+    
+    # Crear agentes con PathSelector
+    for (x, y), tipo in zip(posiciones_iniciales, tipos_agentes):
+        AgentExtendido(
+            agent_type=tipo,
+            floor_field=ff,
+            path_selector=path_selector,
+            x=x,
+            y=y
+        )
     
     print(f"{config['num_agentes']} agentes ({num_vivos} vivos)")
     
@@ -190,14 +237,58 @@ def simular_evacuacion(escenario='basico'):
     
     AgentExtendido.stores()
     
+    # Estadísticas para logging
+    recalculation_stats = {
+        'total_recalculations': 0,
+        'by_anxiety_level': {'baja': 0, 'media': 0, 'alta': 0},
+        'path_lengths': []
+    }
+    
     # Simular hasta evacuar todos
     paso = 0
-    max_pasos = 100
+    max_pasos = 200
     
     print(f"\nSimulando evacuación...")
     
     while any(a.activo for a in AgentExtendido.instances) and paso < max_pasos:
+        # Crear mapa de ocupación antes de proponer movimientos
+        agent_positions = {}
+        for agent in AgentExtendido.instances:
+            if agent.activo and agent.pos_x is not None and agent.pos_y is not None:
+                pos = (agent.pos_x, agent.pos_y)
+                agent_positions[pos] = agent_positions.get(pos, 0) + 1
+        
+        # Actualizar métricas dinámicas del PathSelector si está disponible
+        if path_selector is not None:
+            path_selector.actualizar_metricas(AgentExtendido.instances)
+            path_selector.actualizar_pesos_grafo()
+        
+        # Mover agentes (mover_agentes_con_conflictos ya maneja goal y agent_positions internamente)
         stats = mover_agentes_con_conflictos(AgentExtendido.instances)
+        
+        # Registrar estadísticas de PathSelector
+        if path_selector is not None:
+            # Contar recalculaciones por nivel de ansiedad
+            for agent in AgentExtendido.instances:
+                if agent.activo and agent.usa_enrutamiento_inteligente:
+                    # Verificar si recalculó en este paso (path_index reseteado)
+                    if agent.current_path and len(agent.current_path) > 0:
+                        recalculation_stats['path_lengths'].append(len(agent.current_path))
+                        
+                        # Categorizar por ansiedad
+                        anxiety = agent.ansiedad
+                        if anxiety <= 30:
+                            category = 'baja'
+                        elif anxiety <= 70:
+                            category = 'media'
+                        else:
+                            category = 'alta'
+                        
+                        # Si el path_index es 0 y tiene ruta, probablemente recalculó
+                        if agent.path_index == 0 and agent.steps_without_moving == 0:
+                            recalculation_stats['total_recalculations'] += 1
+                            recalculation_stats['by_anxiety_level'][category] += 1
+        
         AgentExtendido.stores()
         paso += 1
         activos = sum(1 for a in AgentExtendido.instances if a.activo)
@@ -205,6 +296,33 @@ def simular_evacuacion(escenario='basico'):
             print(f"  Paso {paso}: {activos} activos")
     
     print(f"\nEvacuación completa en {paso} pasos")
+    
+    # Mostrar estadísticas de PathSelector
+    if path_selector is not None:
+        print("\n" + "-"*60)
+        print("ESTADÍSTICAS PATH SELECTOR:")
+        print("-"*60)
+        ps_stats = path_selector.obtener_estadisticas()
+        print(f"  Rutas calculadas: {ps_stats['rutas_calculadas']}")
+        print(f"  Cache hit rate: {ps_stats.get('cache_hit_rate', 0):.2%}")
+        print(f"  Nodos explorados (promedio): {ps_stats.get('nodes_explored_avg', 0):.1f}")
+        
+        if recalculation_stats['path_lengths']:
+            avg_length = sum(recalculation_stats['path_lengths']) / len(recalculation_stats['path_lengths'])
+            print(f"  Longitud promedio de rutas: {avg_length:.1f}")
+        
+        print(f"\n  Recalculaciones totales: {recalculation_stats['total_recalculations']}")
+        print(f"  Por nivel de ansiedad:")
+        for level, count in recalculation_stats['by_anxiety_level'].items():
+            print(f"    {level}: {count}")
+        
+        # Estadísticas de ansiedad
+        anxiety_stats = path_selector.get_anxiety_statistics()
+        if anxiety_stats['total_decisions'] > 0:
+            print(f"\n  Decisiones por ansiedad: {anxiety_stats['total_decisions']}")
+            print(f"  Distribución: {anxiety_stats['by_category']}")
+            print(f"  Tasa de ruido añadido: {anxiety_stats['noise_rate']:.2%}")
+    
     # Añadir config
     AgentExtendido.history.append({
         "size_x": width,
@@ -218,7 +336,7 @@ def simular_evacuacion(escenario='basico'):
     with open(archivo, 'wb') as f:
         pickle.dump(AgentExtendido.history, f)
     
-    print(f"Archivo: {archivo}")
+    print(f"\nArchivo: {archivo}")
     print(f"Visualizar: python visualizador.py {archivo}")
 
 

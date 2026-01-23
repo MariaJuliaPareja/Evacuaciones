@@ -1,14 +1,15 @@
 # visualizar_grafo.py 
 import sys
 import os
-# Agregar directorio padre al path para importar escenarios
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Agregar directorio raíz al path para importar módulos
+root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, root_dir)
 
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-from floor_field import Floor_field
-from path_selector import PathSelector
+from simulacion.grilla.floor_field import Floor_field
+from simulacion.nodos.path_selector import PathSelector
 import escenarios.sala_de_clases as esc
 
 def visualizar_grafo_nodos(mostrar_pesos=False):

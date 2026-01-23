@@ -36,11 +36,11 @@ def simular_evacuacion(usar_path_selector=False, verbose=True):
     AgentExtendido.instances = []
     AgentExtendido.history = []
     
-    # 60% vivos, 40% menos_vivos
-    num_vivos = int(len(escenario.agentes) * 0.6)
+    # 60% rapidos, 40% lentos
+    num_rapidos = int(len(escenario.agentes) * 0.6)
     
     for i, (x, y) in enumerate(escenario.agentes):
-        agent_type = 'vivo' if i < num_vivos else 'menos_vivo'
+        agent_type = 'rapido' if i < num_rapidos else 'lento'
         agente = AgentExtendido(
             agent_type=agent_type,
             floor_field=ff,

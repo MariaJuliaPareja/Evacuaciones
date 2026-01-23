@@ -180,14 +180,14 @@ class PathSelector:
             if pos not in agentes_por_celda:
                 agentes_por_celda[pos] = {
                     'count': 0,
-                    'menos_vivos': 0,
+                    'lentos': 0,
                     'ansiedad_total': 0
                 }
             
             agentes_por_celda[pos]['count'] += 1
             
-            if agente.tipo == 'menos_vivo':
-                agentes_por_celda[pos]['menos_vivos'] += 1
+            if agente.tipo == 'lento':
+                agentes_por_celda[pos]['lentos'] += 1
             
             # Asumimos que ansiedad está en el agente
             ansiedad = getattr(agente, 'conflictos_totales', 0)
@@ -200,8 +200,8 @@ class PathSelector:
             # Densidad: 1 agente por celda = 100%
             self.densidad_local[pos] = min(count, 1.0)
             
-            # Velocidad: menos_vivos son más lentos (factor 0.5)
-            ratio_lentos = datos['menos_vivos'] / count
+            # Velocidad: lentos son más lentos (factor 0.5)
+            ratio_lentos = datos['lentos'] / count
             self.velocidad_promedio[pos] = 1.0 - (ratio_lentos * 0.5)
             
             # Ansiedad promedio

@@ -89,7 +89,7 @@ Sistema de simulación y visualización de evacuaciones con agentes inteligentes
   - **Atributos principales**:
     - `id`: Identificador único
     - `pos_x`, `pos_y`: Posición en la grilla
-    - `tipo`: 'vivo' o 'menos_vivo' (para priorización)
+    - `tipo`: 'rapido' o 'lento' (para priorización)
     - `activo`: Si está evacuando o ya evacuó
     - `ansiedad`: Nivel de ansiedad (0-100)
     - `conflictos_totales`, `conflictos_perdidos`: Tracking de colisiones
@@ -434,8 +434,8 @@ Sistema de simulación y visualización de evacuaciones con agentes inteligentes
   - **PathSelector (A*)**: Rutas planificadas con recálculo dinámico
 
 - Los agentes tienen **dos tipos**:
-  - **'vivo'**: Prioridad en conflictos (verde)
-  - **'menos_vivo'**: Menor prioridad (rojo)
+  - **'rapido'**: Prioridad en conflictos (verde)
+  - **'lento'**: Menor prioridad (rojo)
 
 - El sistema soporta **ansiedad** (0-100) que afecta:
   - Selección de rutas (más ansiedad = rutas más diversas)

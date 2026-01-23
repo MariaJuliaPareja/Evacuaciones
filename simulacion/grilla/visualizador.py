@@ -36,10 +36,10 @@ class EstadoAgente:
 class EstadisticasPaso:
     """Estadísticas de un paso de simulación"""
     paso: int
-    vivos_activos: int
-    menos_vivos_activos: int
-    vivos_evacuados: int
-    menos_vivos_evacuados: int
+    rapidos_activos: int
+    lentos_activos: int
+    rapidos_evacuados: int
+    lentos_evacuados: int
     conflictos_en_paso: int
     agentes_en_conflicto: int
 
@@ -53,8 +53,8 @@ class VisualizadorSimulacion:
     """
 
     COLORES = {
-        'vivo': '#00FF00',        # Verde brillante
-        'menos_vivo': '#FF0000',  # Rojo
+        'rapido': '#00FF00',        # Verde brillante
+        'lento': '#FF0000',  # Rojo
         'obstaculo': '#000000',   # Negro
         'puerta': '#FFD700',      # Dorado
         'vacio': '#FFFFFF',       # Blanco
@@ -109,10 +109,10 @@ class VisualizadorSimulacion:
             # Mostrar información de evacuados del último paso
             if self.historial_estadisticas:
                 stats_final = self.historial_estadisticas[-1]
-                total_evacuados = stats_final.vivos_evacuados + stats_final.menos_vivos_evacuados
+                total_evacuados = stats_final.rapidos_evacuados + stats_final.lentos_evacuados
                 print(f"\nEvacuados en último paso:")
-                print(f"Vivos: {stats_final.vivos_evacuados}")
-                print(f"Menos vivos: {stats_final.menos_vivos_evacuados}")
+                print(f"Rapidos: {stats_final.rapidos_evacuados}")
+                print(f"Lentos: {stats_final.lentos_evacuados}")
                 print(f"Total: {total_evacuados}")
         
         except FileNotFoundError:
@@ -143,7 +143,7 @@ class VisualizadorSimulacion:
                         id=getattr(agent_estado, 'id', agent_estado.get('id', 0) if isinstance(agent_estado, dict) else 0),
                         x=getattr(agent_estado, 'x', agent_estado.get('x', 0) if isinstance(agent_estado, dict) else 0),
                         y=getattr(agent_estado, 'y', agent_estado.get('y', 0) if isinstance(agent_estado, dict) else 0),
-                        tipo=getattr(agent_estado, 'tipo', agent_estado.get('tipo', 'vivo') if isinstance(agent_estado, dict) else 'vivo'),
+                        tipo=getattr(agent_estado, 'tipo', agent_estado.get('tipo', 'rapido') if isinstance(agent_estado, dict) else 'rapido'),
                         activo=getattr(agent_estado, 'activo', agent_estado.get('activo', True) if isinstance(agent_estado, dict) else True),
                         conflictos_totales=getattr(agent_estado, 'conflictos_totales', agent_estado.get('conflictos_totales', 0) if isinstance(agent_estado, dict) else 0),
                         conflictos_perdidos=getattr(agent_estado, 'conflictos_perdidos', agent_estado.get('conflictos_perdidos', 0) if isinstance(agent_estado, dict) else 0),
@@ -179,15 +179,15 @@ class VisualizadorSimulacion:
         for paso_idx, paso_agentes in enumerate(historia_agentes):
             # Procesar agentes del paso
             estados_paso = []
-            vivos_activos = 0
-            menos_vivos_activos = 0
-            vivos_evacuados = 0
-            menos_vivos_evacuados = 0
+            rapidos_activos = 0
+            lentos_activos = 0
+            rapidos_evacuados = 0
+            lentos_evacuados = 0
             
             for agent in paso_agentes:
                 # Determinar tipo (con fallback)
                 tipo = getattr(agent, 'tipo', 
-                              getattr(agent, 'agent_type', 'vivo'))
+                              getattr(agent, 'agent_type', 'rapido'))
                 
                 # Verificar si está activo
                 # Usar getattr con default True, pero también verificar explícitamente
@@ -199,16 +199,16 @@ class VisualizadorSimulacion:
                 #     print(f"Agente {getattr(agent, 'id', '?')}: activo={activo}, tipo={tipo}, hasattr_activo={hasattr(agent, 'activo')}")
                 
                 # Contar por categoría
-                if tipo == 'vivo':
+                if tipo == 'rapido':
                     if activo:
-                        vivos_activos += 1
+                        rapidos_activos += 1
                     else:
-                        vivos_evacuados += 1
-                elif tipo == 'menos_vivo':
+                        rapidos_evacuados += 1
+                elif tipo == 'lento':
                     if activo:
-                        menos_vivos_activos += 1
+                        lentos_activos += 1
                     else:
-                        menos_vivos_evacuados += 1
+                        lentos_evacuados += 1
                 
                 # Obtener posiciones con validación
                 pos_x = getattr(agent, 'pos_x', None)
@@ -247,10 +247,10 @@ class VisualizadorSimulacion:
             # Crear estadísticas del paso
             stats = EstadisticasPaso(
                 paso=paso_idx,
-                vivos_activos=vivos_activos,
-                menos_vivos_activos=menos_vivos_activos,
-                vivos_evacuados=vivos_evacuados,
-                menos_vivos_evacuados=menos_vivos_evacuados,
+                rapidos_activos=rapidos_activos,
+                lentos_activos=lentos_activos,
+                rapidos_evacuados=rapidos_evacuados,
+                lentos_evacuados=lentos_evacuados,
                 conflictos_en_paso=0,
                 agentes_en_conflicto=0
             )
@@ -401,8 +401,8 @@ class VisualizadorSimulacion:
                         )
             
             # Título con info clave
-            total_activos = stats.vivos_activos + stats.menos_vivos_activos
-            total_evacuados = stats.vivos_evacuados + stats.menos_vivos_evacuados
+            total_activos = stats.rapidos_activos + stats.lentos_activos
+            total_evacuados = stats.rapidos_evacuados + stats.lentos_evacuados
             
             ax_main.set_title(
                 f'Paso: {frame_num}/{max_frames} | '
@@ -421,13 +421,13 @@ class VisualizadorSimulacion:
             porcentaje_evacuado = (total_evacuados / total_agentes * 100) if total_agentes > 0 else 0
             
             info_text = f""" PASO {frame_num:3d}/{max_frames:3d}     
-                AGENTES VIVOS:
-                Activos: {stats.vivos_activos}
-                Evacuados: {stats.vivos_evacuados}
+                AGENTES RAPIDOS:
+                Activos: {stats.rapidos_activos}
+                Evacuados: {stats.rapidos_evacuados}
 
-                AGENTES MENOS VIVOS:
-                Activos: {stats.menos_vivos_activos}
-                Evacuados: {stats.menos_vivos_evacuados}
+                AGENTES LENTOS:
+                Activos: {stats.lentos_activos}
+                Evacuados: {stats.lentos_evacuados}
 
                 CONFLICTOS:
                 En este paso: {stats.conflictos_en_paso}
@@ -641,7 +641,7 @@ class VisualizadorSimulacion:
                                ha='center', va='center', fontsize=8,
                                color='white', weight='bold', zorder=11)
             
-            total_activos = stats.vivos_activos + stats.menos_vivos_activos
+            total_activos = stats.rapidos_activos + stats.lentos_activos
             title = f'Paso: {paso} | Activos: {total_activos}'
             if show_paths:
                 title += ' | Rutas A* mostradas'
@@ -792,7 +792,7 @@ class VisualizadorSimulacion:
         
         # Título
         stats = self.historial_estadisticas[frame_index]
-        total_activos = stats.vivos_activos + stats.menos_vivos_activos
+        total_activos = stats.rapidos_activos + stats.lentos_activos
         ax.set_title(
             f'Rutas Planificadas A* - Paso {frame_index}\n'
             f'Agentes activos: {total_activos} | Rutas mostradas: {routes_drawn}',
@@ -836,15 +836,15 @@ class VisualizadorSimulacion:
         pasos = [s.paso for s in self.historial_estadisticas]
         
         # Gráfico 1: Activos vs evacuados
-        vivos_activos = [s.vivos_activos for s in self.historial_estadisticas]
-        menos_vivos_activos = [s.menos_vivos_activos for s in self.historial_estadisticas]
-        vivos_evacuados = [s.vivos_evacuados for s in self.historial_estadisticas]
-        menos_vivos_evacuados = [s.menos_vivos_evacuados for s in self.historial_estadisticas]
+        rapidos_activos = [s.rapidos_activos for s in self.historial_estadisticas]
+        lentos_activos = [s.lentos_activos for s in self.historial_estadisticas]
+        rapidos_evacuados = [s.rapidos_evacuados for s in self.historial_estadisticas]
+        lentos_evacuados = [s.lentos_evacuados for s in self.historial_estadisticas]
         
-        ax1.plot(pasos, vivos_activos, 'g-', linewidth=2, label='Vivos activos', marker='o')
-        ax1.plot(pasos, menos_vivos_activos, 'r-', linewidth=2, label='Menos vivos activos', marker='s')
-        ax1.plot(pasos, vivos_evacuados, 'g--', linewidth=2, label='Vivos evacuados', alpha=0.7)
-        ax1.plot(pasos, menos_vivos_evacuados, 'r--', linewidth=2, label='Menos vivos evacuados', alpha=0.7)
+        ax1.plot(pasos, rapidos_activos, 'g-', linewidth=2, label='Rapidos activos', marker='o')
+        ax1.plot(pasos, lentos_activos, 'r-', linewidth=2, label='Lentos activos', marker='s')
+        ax1.plot(pasos, rapidos_evacuados, 'g--', linewidth=2, label='Rapidos evacuados', alpha=0.7)
+        ax1.plot(pasos, lentos_evacuados, 'r--', linewidth=2, label='Lentos evacuados', alpha=0.7)
         
         ax1.set_xlabel('Paso de tiempo', fontsize=12, weight='bold')
         ax1.set_ylabel('Número de agentes', fontsize=12, weight='bold')
@@ -853,9 +853,9 @@ class VisualizadorSimulacion:
         ax1.grid(True, alpha=0.3)
         
         # Gráfico 2: Progreso
-        total_inicial = vivos_activos[0] + menos_vivos_activos[0]
+        total_inicial = rapidos_activos[0] + lentos_activos[0]
         if total_inicial > 0:
-            evacuados_totales = [v + m for v, m in zip(vivos_evacuados, menos_vivos_evacuados)]
+            evacuados_totales = [v + m for v, m in zip(rapidos_evacuados, lentos_evacuados)]
             porcentaje = [(e / total_inicial) * 100 for e in evacuados_totales]
             
             ax2.plot(pasos, porcentaje, 'b-', linewidth=3, marker='o')
@@ -899,12 +899,12 @@ class VisualizadorSimulacion:
         
         # Gráfico 2: Distribución por tipo
         estados_finales = self.historial_agentes[-1]
-        conflictos_vivos = [e.conflictos_totales for e in estados_finales if e.tipo == 'vivo']
-        conflictos_menos_vivos = [e.conflictos_totales for e in estados_finales if e.tipo == 'menos_vivo']
+        conflictos_rapidos = [e.conflictos_totales for e in estados_finales if e.tipo == 'rapido']
+        conflictos_lentos = [e.conflictos_totales for e in estados_finales if e.tipo == 'lento']
         
-        if conflictos_vivos or conflictos_menos_vivos:
-            data = [conflictos_vivos, conflictos_menos_vivos]
-            labels = ['Vivos', 'Menos vivos']
+        if conflictos_rapidos or conflictos_lentos:
+            data = [conflictos_rapidos, conflictos_lentos]
+            labels = ['Rapidos', 'Lentos']
             colors = ['green', 'red']
             
             bp = ax2.boxplot(data, labels=labels, patch_artist=True, showmeans=True, meanline=True)
@@ -932,8 +932,8 @@ class VisualizadorSimulacion:
         total_conflictos = sum(s.conflictos_en_paso for s in self.historial_estadisticas)
         
         estados_finales = self.historial_agentes[-1]
-        vivos = [e for e in estados_finales if e.tipo == 'vivo']
-        menos_vivos = [e for e in estados_finales if e.tipo == 'menos_vivo']
+        rapidos = [e for e in estados_finales if e.tipo == 'rapido']
+        lentos = [e for e in estados_finales if e.tipo == 'lento']
         print(f"\n ARCHIVO:")
         print(f"Ruta: {self.archivo_pkl}")
         print(f"Formato: {self.formato}")
@@ -944,19 +944,19 @@ class VisualizadorSimulacion:
         if total_pasos > 0:
             print(f"Conflictos promedio/paso: {total_conflictos/total_pasos:.2f}")
         
-        if vivos:
-            print(f"\nAGENTES VIVOS:")
-            print(f"Total: {len(vivos)}")
-            print(f"Evacuados: {stats_finales.vivos_evacuados}")
-            print(f"Conflictos promedio: {np.mean([e.conflictos_totales for e in vivos]):.2f}")
-            print(f"Conflictos perdidos promedio: {np.mean([e.conflictos_perdidos for e in vivos]):.2f}")
+        if rapidos:
+            print(f"\nAGENTES RAPIDOS:")
+            print(f"Total: {len(rapidos)}")
+            print(f"Evacuados: {stats_finales.rapidos_evacuados}")
+            print(f"Conflictos promedio: {np.mean([e.conflictos_totales for e in rapidos]):.2f}")
+            print(f"Conflictos perdidos promedio: {np.mean([e.conflictos_perdidos for e in rapidos]):.2f}")
         
-        if menos_vivos:
-            print(f"\nAGENTES MENOS VIVOS:")
-            print(f"Total: {len(menos_vivos)}")
-            print(f"Evacuados: {stats_finales.menos_vivos_evacuados}")
-            print(f"Conflictos promedio: {np.mean([e.conflictos_totales for e in menos_vivos]):.2f}")
-            print(f"Conflictos perdidos promedio: {np.mean([e.conflictos_perdidos for e in menos_vivos]):.2f}")
+        if lentos:
+            print(f"\nAGENTES LENTOS:")
+            print(f"Total: {len(lentos)}")
+            print(f"Evacuados: {stats_finales.lentos_evacuados}")
+            print(f"Conflictos promedio: {np.mean([e.conflictos_totales for e in lentos]):.2f}")
+            print(f"Conflictos perdidos promedio: {np.mean([e.conflictos_perdidos for e in lentos]):.2f}")
         
     
     def generar_reporte_completo(self, directorio_salida: str = 'reportes'):

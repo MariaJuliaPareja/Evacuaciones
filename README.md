@@ -1,12 +1,12 @@
 # Sistema de Visualización de Evacuación - Documentación (DESACTUALIZADA)
 ## Descripción General
-Este sistema proporciona una plataforma completa para simular y visualizar evacuaciones con clasificación de agentes. Los agentes se clasifican como "vivos" (verde) o "menos vivos" (rojo), con priorización en conflictos. 
+Este sistema proporciona una plataforma completa para simular y visualizar evacuaciones con clasificación de agentes. Los agentes se clasifican como "rapidos" (verde) o "lentos" (rojo), con priorización en conflictos. 
 ## Características Principales
 - Escalable y Modular: Código separado en módulos independientes
-- Clasificación de Agentes: Sistema vivo (verde) / menos_vivo (rojo)
-- Priorización en Conflictos: Los "vivos" tienen prioridad
+- Clasificación de Agentes: Sistema rapido (verde) / lento (rojo)
+- Priorización en Conflictos: Los "rapidos" tienen prioridad
 - Contador de Conflictos: Atributo en cada agente
-- Gráfico Temporal: Compara vivos vs muertos en el tiempo
+- Gráfico Temporal: Compara rapidos vs lentos en el tiempo
 - Película Paso a Paso: Animación completa de la simulación
 - Guardado PKL: Con posición, tipo, ansiedad, conflictos
 - Visualizador Separado: No está en el código de compilación
@@ -17,7 +17,7 @@ Opción 1: Simulación individual con proporción configurable
 Opción 2: Estudio paramétrico (múltiples simulaciones)
 ## Ejemplo de flujo:
 1. Selecciona escenario (avión, sala de clases, etc.)
-2. Define proporción de agentes "vivos" (ej: 0.5 = 50%)
+2. Define proporción de agentes "rapidos" (ej: 0.5 = 50%)
 3. El sistema ejecuta y guarda datos en archivo PKL
 ### Visualizar Resultados
 bashpython visualizador.py datos/simulacion_20260106_153045.pkl
@@ -37,7 +37,7 @@ viz.grafico_conflictos(guardar=True)
 viz.generar_reporte_completo(directorio_salida='mi_reporte')
 #### Gráfico de Evacuación Temporal
 Líneas de agentes activos vs evacuados
-Separación por tipo (vivos/menos vivos)
+Separación por tipo (rapidos/lentos)
 Porcentaje de evacuación acumulado
 ## Estructura de Datos PKL
 El archivo PKL contiene:
@@ -65,7 +65,7 @@ id, x, y, activo, tipo, conflictos_totales, conflictos_perdidos, ansiedad
 
 EstadisticasPaso incluye:
 
-paso, vivos_activos, menos_vivos_activos, vivos_evacuados, menos_vivos_evacuados, conflictos_en_paso, agentes_en_conflicto
+paso, rapidos_activos, lentos_activos, rapidos_evacuados, lentos_evacuados, conflictos_en_paso, agentes_en_conflicto
 
 ## Guía para Modificar el Código
 Para cambiar la lógica de movimiento:
@@ -77,7 +77,7 @@ pythondef proponer_movimiento(self):
     Variables disponibles:
     - self.x, self.y: posición actual
     - self.floor_field.valores: matriz de distancias
-    - self.tipo: 'vivo' o 'menos_vivo'
+    - self.tipo: 'rapido' o 'lento'
     - self.ansiedad: nivel de ansiedad
     """
     # ... tu lógica aquí
@@ -86,8 +86,8 @@ Archivo: simulacion/agentes.py, función mover_agentes()
 python# Busca esta sección:
 # SISTEMA DE PRIORIZACIÓN:
 # 1. Separar agentes por tipo
-vivos = [a for a in lista_agentes if a.tipo == 'vivo']
-menos_vivos = [a for a in lista_agentes if a.tipo == 'menos_vivo']
+rapidos = [a for a in lista_agentes if a.tipo == 'rapido']
+lentos = [a for a in lista_agentes if a.tipo == 'lento']
 
 # MODIFICAR AQUÍ para cambiar las reglas de priorización
 Para agregar nuevas estadísticas:
@@ -109,7 +109,7 @@ tiempos = []
 
 for prop in proporciones:
     pasos, _ = ejecutar_simulacion_con_logging(
-        porcentaje_vivos=prop,
+        porcentaje_rapidos=prop,
         mostrar_progreso=False
     )
     tiempos.append(pasos)
@@ -117,7 +117,7 @@ for prop in proporciones:
 # Graficar resultados
 plt.figure(figsize=(10, 6))
 plt.plot(proporciones * 100, tiempos, 'o-', linewidth=2)
-plt.xlabel('Porcentaje de agentes "vivos" (%)')
+plt.xlabel('Porcentaje de agentes "rapidos" (%)')
 plt.ylabel('Tiempo de evacuación (pasos)')
 plt.title('Efecto de la proporción de agentes en el tiempo de evacuación')
 plt.grid(True, alpha=0.3)
@@ -139,9 +139,9 @@ for i, archivo in enumerate(archivos):
     stats = viz.historial_estadisticas
     
     pasos = [s.paso for s in stats]
-    vivos_evac = [s.vivos_evacuados for s in stats]
+    rapidos_evac = [s.rapidos_evacuados for s in stats]
     
-    axes[i].plot(pasos, vivos_evac)
+    axes[i].plot(pasos, rapidos_evac)
     axes[i].set_title(f'Simulación {i+1}')
     axes[i].set_xlabel('Paso')
     axes[i].set_ylabel('Vivos evacuados')

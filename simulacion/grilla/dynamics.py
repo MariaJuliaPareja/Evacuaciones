@@ -186,8 +186,8 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
             print("  Continuando con comportamiento legacy")
             path_selector = None
     
-    # Crear agentes (60% vivos, 40% menos_vivos)
-    num_vivos = int(config['num_agentes'] * 0.6)
+    # Crear agentes (60% rapidos, 40% lentos)
+    num_rapidos = int(config['num_agentes'] * 0.6)
     
     # Preparar posiciones iniciales
     posiciones_iniciales = []
@@ -207,8 +207,8 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
             if pos not in config['obstaculos'] and pos not in posiciones_ocupadas:
                 posiciones_ocupadas.add(pos)
                 posiciones_iniciales.append((x, y))
-                # Asignar tipo: primeros num_vivos son 'vivo', resto 'menos_vivo'
-                tipos_agentes.append('vivo' if i < num_vivos else 'menos_vivo')
+                # Asignar tipo: primeros num_rapidos son 'rapido', resto 'lento'
+                tipos_agentes.append('rapido' if i < num_rapidos else 'lento')
                 break
             intentos += 1
         
@@ -216,7 +216,7 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
             print(f"ADVERTENCIA: No se pudo asignar posición única al agente {i}")
             # Usar posición por defecto si falla
             posiciones_iniciales.append((width-1, height-1))
-            tipos_agentes.append('vivo' if i < num_vivos else 'menos_vivo')
+            tipos_agentes.append('rapido' if i < num_rapidos else 'lento')
     
     # Crear agentes con PathSelector
     for (x, y), tipo in zip(posiciones_iniciales, tipos_agentes):
@@ -228,7 +228,7 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
             y=y
         )
     
-    print(f"{config['num_agentes']} agentes ({num_vivos} vivos)")
+    print(f"{config['num_agentes']} agentes ({num_rapidos} rapidos)")
     
     # Verificar que todos los agentes tienen posiciones válidas
     for i, agent in enumerate(AgentExtendido.instances):

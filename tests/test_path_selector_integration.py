@@ -156,7 +156,7 @@ def test_agent_usa_path_selector():
     
     # Create agent with PathSelector
     agent = AgentExtendido(
-        agent_type='vivo',
+        agent_type='rapido',
         floor_field=ff,
         path_selector=ps,
         x=10,

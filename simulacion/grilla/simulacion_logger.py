@@ -25,7 +25,7 @@ class EstadoAgente:
     activo : bool
         Si el agente está activo o ya evacuó
     tipo : str
-        'vivo' o 'menos_vivo'
+        'rapido' o 'lento'
     conflictos_totales : int
         Total de conflictos acumulados
     conflictos_perdidos : int
@@ -49,24 +49,24 @@ class EstadisticasPaso:
     Atributos:
     paso : int
         Número del paso de tiempo
-    vivos_activos : int
-        Cantidad de agentes 'vivos' que aún no evacuaron
-    menos_vivos_activos : int
-        Cantidad de agentes 'menos_vivos' que aún no evacuaron
-    vivos_evacuados : int
-        Cantidad acumulada de agentes 'vivos' evacuados
-    menos_vivos_evacuados : int
-        Cantidad acumulada de agentes 'menos_vivos' evacuados
+    rapidos_activos : int
+        Cantidad de agentes 'rapidos' que aún no evacuaron
+    lentos_activos : int
+        Cantidad de agentes 'lentos' que aún no evacuaron
+    rapidos_evacuados : int
+        Cantidad acumulada de agentes 'rapidos' evacuados
+    lentos_evacuados : int
+        Cantidad acumulada de agentes 'lentos' evacuados
     conflictos_en_paso : int
         Conflictos ocurridos en este paso
     agentes_en_conflicto : int
         Agentes involucrados en conflictos en este paso
     """
     paso: int
-    vivos_activos: int
-    menos_vivos_activos: int
-    vivos_evacuados: int
-    menos_vivos_evacuados: int
+    rapidos_activos: int
+    lentos_activos: int
+    rapidos_evacuados: int
+    lentos_evacuados: int
     conflictos_en_paso: int
     agentes_en_conflicto: int
 
@@ -101,8 +101,8 @@ class SimulacionLogger:
         self.historial_estadisticas: List[EstadisticasPaso] = []
         
         # Contadores para evacuados
-        self.vivos_evacuados_total = 0
-        self.menos_vivos_evacuados_total = 0
+        self.rapidos_evacuados_total = 0
+        self.lentos_evacuados_total = 0
     
     def registrar_paso(self, agentes: list, paso: int, stats_movimiento: dict):
         """
@@ -118,8 +118,8 @@ class SimulacionLogger:
         """
         # Registrar estado de cada agente
         estados_actuales = []
-        vivos_activos = 0
-        menos_vivos_activos = 0
+        rapidos_activos = 0
+        lentos_activos = 0
         
         for idx, agente in enumerate(agentes):
             # Crear estado del agente
@@ -137,10 +137,10 @@ class SimulacionLogger:
             
             # Contar agentes activos por tipo
             if agente.activo:
-                if agente.tipo == 'vivo':
-                    vivos_activos += 1
+                if agente.tipo == 'rapido':
+                    rapidos_activos += 1
                 else:
-                    menos_vivos_activos += 1
+                    lentos_activos += 1
         
         self.historial_agentes.append(estados_actuales)
         
@@ -151,18 +151,18 @@ class SimulacionLogger:
                 estado_anterior = self.historial_agentes[-2][idx]
                 if estado_anterior.activo and not agente.activo:
                     # Este agente evacuó en este paso
-                    if agente.tipo == 'vivo':
-                        self.vivos_evacuados_total += 1
+                    if agente.tipo == 'rapido':
+                        self.rapidos_evacuados_total += 1
                     else:
-                        self.menos_vivos_evacuados_total += 1
+                        self.lentos_evacuados_total += 1
         
         # Crear estadísticas del paso
         estadisticas = EstadisticasPaso(
             paso=paso,
-            vivos_activos=vivos_activos,
-            menos_vivos_activos=menos_vivos_activos,
-            vivos_evacuados=self.vivos_evacuados_total,
-            menos_vivos_evacuados=self.menos_vivos_evacuados_total,
+            rapidos_activos=rapidos_activos,
+            lentos_activos=lentos_activos,
+            rapidos_evacuados=self.rapidos_evacuados_total,
+            lentos_evacuados=self.lentos_evacuados_total,
             conflictos_en_paso=stats_movimiento.get('conflictos_totales', 0),
             agentes_en_conflicto=stats_movimiento.get('agentes_en_conflicto', 0)
         )
@@ -240,8 +240,8 @@ class SimulacionLogger:
         
         print(f"Datos guardados en: {nombre_archivo}")
         print(f"- Total de pasos: {len(self.historial_agentes)}")
-        print(f"- Agentes vivos evacuados: {self.vivos_evacuados_total}")
-        print(f"- Agentes menos_vivos evacuados: {self.menos_vivos_evacuados_total}")
+        print(f"- Agentes rapidos evacuados: {self.rapidos_evacuados_total}")
+        print(f"- Agentes lentos evacuados: {self.lentos_evacuados_total}")
     
     def obtener_resumen(self) -> dict:
         """
@@ -256,8 +256,8 @@ class SimulacionLogger:
         
         return {
             'pasos_totales': len(self.historial_agentes),
-            'vivos_evacuados': self.vivos_evacuados_total,
-            'menos_vivos_evacuados': self.menos_vivos_evacuados_total,
+            'rapidos_evacuados': self.rapidos_evacuados_total,
+            'lentos_evacuados': self.lentos_evacuados_total,
             'conflictos_totales': total_conflictos,
             'tiempo_promedio_evacuacion': len(self.historial_agentes)
         }

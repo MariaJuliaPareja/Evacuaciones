@@ -11,7 +11,7 @@ class AgentExtendido:
         - history: lista de snapshots
         - stores(): guarda estado actual
         - floor_field: navegación inteligente
-        - tipo: 'vivo'/'menos_vivo' (priorización)
+        - tipo: 'rapido'/'lento' (priorización)
         - conflictos: tracking de colisiones
         - proponer_movimiento(): movimiento automático inteligente
     """
@@ -22,7 +22,7 @@ class AgentExtendido:
     
     def __init__(self, 
                  type: str = "defaults",
-                 agent_type: str = "vivo",  # 'vivo' o 'menos_vivo'
+                 agent_type: str = "rapido",  # 'rapido' o 'lento'
                  floor_field = None,
                  path_selector = None,
                  x: Optional[int] = None,
@@ -33,7 +33,7 @@ class AgentExtendido:
         type : str
             Tipo de agente
         agent_type : str
-            'vivo' o 'menos_vivo' - para priorización en conflictos
+            'rapido' o 'lento' - para priorización en conflictos
         floor_field : Floor_field, opcional
             Campo de piso para navegación inteligente
         path_selector : PathSelector, opcional
@@ -47,7 +47,7 @@ class AgentExtendido:
         self.pos_x: int | None = x
         self.pos_y: int | None = y
         self.if_change: bool = False
-        self.tipo: str = agent_type  # 'vivo' o 'menos_vivo'
+        self.tipo: str = agent_type  # 'rapido' o 'lento'
         self.activo: bool = True  # False cuando evacua
         self.floor_field = floor_field  # Para navegación inteligente
         self.conflictos_totales: int = 0
@@ -338,7 +338,7 @@ def mover_agentes_con_conflictos(agentes: list[AgentExtendido]) -> dict:
     Reglas:
     1. Cada agente propone su movimiento (según floor_field)
     2. Si varios quieren la misma celda:
-       - Prioridad a 'vivos' sobre 'menos_vivos'
+       - Prioridad a 'rapidos' sobre 'lentos'
        - Si empate de tipo, azar
     3. Los perdedores se quedan quietos
     4. Se registran conflictos
@@ -411,14 +411,14 @@ def mover_agentes_con_conflictos(agentes: list[AgentExtendido]) -> dict:
             for a in lista_agentes:
                 a.conflictos_totales += 1
             
-            # Priorización: vivos > menos_vivos
-            vivos = [a for a in lista_agentes if a.tipo == 'vivo']
-            menos_vivos = [a for a in lista_agentes if a.tipo == 'menos_vivo']
+            # Priorización: rapidos > lentos
+            rapidos = [a for a in lista_agentes if a.tipo == 'rapido']
+            lentos = [a for a in lista_agentes if a.tipo == 'lento']
             
-            if vivos:
-                elegido = random.choice(vivos)
+            if rapidos:
+                elegido = random.choice(rapidos)
             else:
-                elegido = random.choice(menos_vivos)
+                elegido = random.choice(lentos)
             
             # Mover al ganador solo si realmente se puede mover
             if elegido.pos_x != destino[0] or elegido.pos_y != destino[1]:

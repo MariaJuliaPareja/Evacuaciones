@@ -54,7 +54,7 @@ class VisualizadorAnimacionRutas:
         
         for i, (x, y) in enumerate(posiciones_iniciales):
             agente = AgentExtendido(
-                agent_type='vivo' if i % 2 == 0 else 'menos_vivo',
+                agent_type='rapido' if i % 2 == 0 else 'lento',
                 floor_field=self.ff,
                 path_selector=self.ps,
                 x=x,

@@ -19,16 +19,25 @@ python simulacion\nodos\visualizar_animacion_rutas.py
 
 **Qué muestra:**
 - Agentes moviéndose siguiendo sus rutas planificadas
+- **Sistema de desbloqueo progresivo**: Muestra todas las rutas desbloqueadas (1, 3, o 5)
+- Ruta actual: línea gruesa y sólida (color según ansiedad)
+- Rutas alternativas: líneas delgadas y punteadas (colores por índice)
+- Etiquetas de agente: muestran número de rutas desbloqueadas (ej: "3P")
 - Cálculo de nuevas rutas cuando se necesitan
 - Recalculación de rutas cuando hay bloqueos o estancamiento
-- Rutas completas dibujadas con colores según ansiedad
-- Estadísticas en tiempo real (paso actual, agentes activos, rutas calculadas/recalculadas)
+- Estadísticas en tiempo real (paso actual, agentes activos, rutas calculadas/recalculadas, ansiedad promedio)
 
 **Controles:**
-- **< Anterior**: Retroceder un paso
-- **Play/Pause**: Reproducir/pausar animación automática
-- **Siguiente >**: Avanzar un paso
-- **Slider**: Saltar a cualquier paso de la simulación
+- **⏮ Previous / Left Arrow**: Retroceder un paso
+- **▶ Play / ⏸ Pause / Space**: Reproducir/pausar animación automática
+- **Next ⏭ / Right Arrow**: Avanzar un paso
+- **Step Slider**: Saltar a cualquier paso de la simulación
+- **Speed Slider**: Ajustar velocidad de animación (100-2000 ms)
+
+**Atajos de Teclado:**
+- `←` (Left Arrow): Paso anterior
+- `→` (Right Arrow): Paso siguiente
+- `Space`: Play/Pause
 
 ---
 
@@ -164,10 +173,13 @@ viz = VisualizadorSimulacion('datos/demo_simulacion.pkl')
 # Visualizar rutas en un frame específico
 viz.visualizar_rutas_agentes(frame_index=10, output_file='rutas_frame_10.png')
 
+# Visualizar rutas multinivel (progressive unlocking)
+viz.visualizar_rutas_multinivel(paso_idx=10, show_legend=True)
+
 # Crear animación con rutas visibles
 viz.crear_animacion(show_paths=True, guardar_video=True, nombre_video='simulacion_con_rutas.mp4')
 
-# Animación interactiva con rutas
+# Animación interactiva con rutas multinivel
 viz.crear_animacion_interactiva(show_paths=True)
 ```
 
@@ -209,6 +221,11 @@ python -m pytest tests/test_path_selector_integration.py::test_seleccion_por_ans
    - **Baja (0-30):** Siempre ruta óptima
    - **Óptima (30-70):** 70% óptima, 20% media, 10% subóptima
    - **Alta (70-100):** 30% óptima, 30% media, 40% subóptima + posible ruido
+
+5. **Desbloqueo progresivo de rutas:**
+   - **0-2 pasos atascado:** 1 ruta desbloqueada (baja ansiedad)
+   - **3-4 pasos atascado:** 3 rutas desbloqueadas (ansiedad media)
+   - **5+ pasos atascado:** 5 rutas desbloqueadas (alta ansiedad)
 
 5. **Detección de bloqueos:**
    - Verifica si debe recalcular ruta

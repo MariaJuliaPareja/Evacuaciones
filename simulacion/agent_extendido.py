@@ -1,437 +1,607 @@
+"""
+Agente extendido con PathSelector, A* y desbloqueo progresivo de rutas.
 
-from typing import Self, Optional, Tuple, Dict
+Este módulo implementa el sistema completo de agentes inteligentes con:
+- Desbloqueo progresivo de rutas (1→3→5) basado en estancamiento
+- Selección de rutas según ansiedad (Yerkes-Dodson Law)
+- Gestión automática de ansiedad y steps_without_moving
+- Resolución de conflictos entre agentes
+
+Referencias:
+- Ramírez et al. (2019) - Physica A 531: Model with random stalling and anxiety
+- Ramírez et al. (2021) - PRE 104: CA model with progressive path unlocking
+- Varas et al. (2007) - Physica A 382: Floor field algorithm
+"""
+
 import random
-import numpy as np
-import copy
+from typing import Tuple, Optional, Dict, List
+
 
 class AgentExtendido:
     """
-    Agent con características avanzadas.
-        - instances: lista de clase con todos los agentes
-        - history: lista de snapshots
-        - stores(): guarda estado actual
-        - floor_field: navegación inteligente
-        - tipo: 'rapido'/'lento' (priorización)
-        - conflictos: tracking de colisiones
-        - proponer_movimiento(): movimiento automático inteligente
+    Agente con PathSelector, A* y desbloqueo progresivo de rutas.
+    
+    Sistema de desbloqueo basado en estancamiento:
+    - 0-2 pasos estancado: 1 ruta (óptima)
+    - 3-5 pasos estancado: 3 rutas alternativas
+    - 6+ pasos estancado: 5 rutas (todas las opciones)
+    
+    Sistema de ansiedad (Yerkes-Dodson Law):
+    - Baja ansiedad (0-30): Prefiere ruta óptima
+    - Ansiedad óptima (30-70): Balance entre rutas
+    - Alta ansiedad (70-100): Prefiere rutas alternativas
     """
     
-    # Atributos de clase (igual que tu Agent)
-    instances: list[Self] = []
-    history: list[list[Self]] = []
+    # Atributos de clase para tracking global
+    instances: List['AgentExtendido'] = []
+    history: List[Dict] = []
     
-    def __init__(self, 
-                 type: str = "defaults",
-                 agent_type: str = "rapido",  # 'rapido' o 'lento'
-                 floor_field = None,
-                 path_selector = None,
-                 x: Optional[int] = None,
-                 y: Optional[int] = None):
+    def __init__(self, agent_type: str, floor_field, path_selector, x: int, y: int):
         """
-        Inicializa agente extendido.
+        Inicializa un agente extendido.
+        
         Parámetros:
-        type : str
-            Tipo de agente
         agent_type : str
-            'rapido' o 'lento' - para priorización en conflictos
-        floor_field : Floor_field, opcional
-            Campo de piso para navegación inteligente
-        path_selector : PathSelector, opcional
-            Selector de rutas para navegación inteligente con A*
-        x, y : int, opcional
+            Tipo de agente ('rapido' o 'lento')
+        floor_field : Floor_field
+            Campo de piso con valores de distancia
+        path_selector : PathSelector o None
+            Selector de rutas inteligente. Si es None, usa movimiento greedy
+        x, y : int
             Posición inicial del agente
         """
-
-        self.id: int = len(AgentExtendido.instances)
-        self.agent_type: str = type
-        self.pos_x: int | None = x
-        self.pos_y: int | None = y
-        self.if_change: bool = False
-        self.tipo: str = agent_type  # 'rapido' o 'lento'
-        self.activo: bool = True  # False cuando evacua
-        self.floor_field = floor_field  # Para navegación inteligente
-        self.conflictos_totales: int = 0
-        self.conflictos_perdidos: int = 0
-        self.ansiedad: int = 0   # Nivel de ansiedad (0-100)
+        # ATRIBUTOS BÁSICOS
+        self.id = len(AgentExtendido.instances)
+        self.tipo = agent_type  # 'rapido' o 'lento'
+        self.pos_x = x
+        self.pos_y = y
+        self.activo = True
+        self.if_change = False  # Indica si se movió en el último paso
         
-        # PathSelector integration
+        # INTEGRACIÓN CON PATHFINDER
+        self.floor_field = floor_field
         self.path_selector = path_selector
         self.usa_enrutamiento_inteligente = (path_selector is not None)
         
-        # Nuevos atributos para PathSelector
-        self.current_path: Optional[list] = None  # Ruta actual que está siguiendo
-        self.path_index: int = 0  # Índice actual en la ruta
-        self.steps_without_moving: int = 0  # Pasos sin moverse
-        self.alternative_paths: list = []  # Las 3 rutas alternativas calculadas
+        # SISTEMA DE RUTAS (PathSelector)
+        self.current_path = None  # Ruta actual siguiendo
+        self.path_index = 0  # Índice en la ruta actual
+        self.all_calculated_paths = []  # Hasta 5 rutas calculadas
+        self.unlocked_paths_count = 1  # Start con 1 ruta desbloqueada
         
-        # Mantener compatibilidad con código existente
-        self.ruta_planificada = None  # Alias para current_path (compatibilidad)
-        self.pasos_desde_recalculo = 0  # Alias para steps_without_moving (compatibilidad)
+        # SISTEMA DE ANSIEDAD (Yerkes-Dodson Law)
+        self.ansiedad = random.uniform(20, 90)  # 0-100
+        self.steps_without_moving = 0  # CRÍTICO: controla desbloqueo
+        self.calmness_threshold = 3  # Umbral para desbloquear rutas
         
+        # TRACKING
+        self.conflictos_totales = 0
+        self.conflictos_perdidos = 0
+        
+        # COOLDOWN DE RECALCULACIÓN (inercia cognitiva)
+        self.last_recalculation_step = -1  # Paso de la última recalculación
+        self.recalculation_cooldown = 4  # Pasos mínimos entre recalculaciones
+        
+        # FLAG PARA VISUALIZACIÓN
+        self.recalculated_this_step = False  # Indica si recalculó en el paso actual
+        
+        # HISTORIAL DE TRAYECTORIA (opcional, para debugging)
+        self.trajectory_history = []  # Lista de (x, y) visitadas
+        
+        # REGISTRO DE CLASE
         AgentExtendido.instances.append(self)
     
-    
-    @classmethod
-    def stores(cls) -> None:
-        """Guarda snapshot del estado actual"""
-        # Hacer copia profunda de los agentes para preservar su estado
-        snapshot = [copy.deepcopy(agent) for agent in cls.instances]
-        cls.history.append(snapshot)
-    
-    def proponer_movimiento(self, goal: Optional[Tuple[int, int]] = None,
-                           agent_positions: Optional[Dict[Tuple[int, int], int]] = None) -> Tuple[int, int]:
+    def elegir_ruta(self, goal: Tuple[int, int], agent_positions: Optional[Dict[Tuple[int, int], int]] = None):
         """
-        Propone movimiento del agente.
+        Elige o recalcula ruta SOLO SI ES NECESARIO.
+        NO recalcula si ya tiene una ruta válida.
         
-        Si usa PathSelector, utiliza elegir_ruta para seleccionar/calcular ruta.
-        Si no, usa comportamiento greedy con floor_field.
-        
-        Parámetros:
-        goal : Tuple[int, int], opcional
-            Posición objetivo (puerta). Si None y hay path_selector, se calcula automáticamente.
-        agent_positions : Dict[Tuple[int, int], int], opcional
-            Diccionario con ocupación de celdas {(x,y): num_agents}.
-            Si None, se calcula automáticamente desde AgentExtendido.instances.
-        
-        Returns:
-        Tuple[int, int] : Posición propuesta
-        """
-        if not self.activo or self.pos_x is None or self.pos_y is None:
-            return (self.pos_x, self.pos_y)
-        
-        if self.usa_enrutamiento_inteligente:
-            return self._movimiento_con_path_selector(goal, agent_positions)
-        return self._movimiento_greedy_floor_field()
-    
-    def _movimiento_greedy_floor_field(self) -> Tuple[int, int]: #PARA LA GRILLA
-        """
-        Comportamiento ORIGINAL: seguir floor field de manera greedy.
-        Propone el mejor movimiento según floor_field.
-        
-        Si NO tiene floor_field, retorna posición actual.
-        Si tiene floor_field, elige la celda vecina con menor valor.
-        
-        Retorna:(x, y) : Tupla con la posición propuesta
-        """
-        if self.floor_field is None:
-            return (self.pos_x, self.pos_y)
-        
-        pasos = [
-            (0, 1), (1, 0), (0, -1), (-1, 0),
-            (1, 1), (1, -1), (-1, 1), (-1, -1)
-        ]
-        
-        mejor_valor = self.floor_field.valores[self.pos_y, self.pos_x]
-        mejores = [(self.pos_x, self.pos_y)]
-        
-        for dx, dy in pasos:
-            nx, ny = self.pos_x + dx, self.pos_y + dy
-            
-            if 0 <= nx < self.floor_field.width and 0 <= ny < self.floor_field.height:
-                v = self.floor_field.valores[ny, nx]
-                
-                if v < mejor_valor:
-                    mejor_valor = v
-                    mejores = [(nx, ny)]
-                elif np.isclose(v, mejor_valor):
-                    mejores.append((nx, ny))
-        
-        return random.choice(mejores)
-
-    def _get_agent_positions(self) -> Dict[Tuple[int, int], int]:
-        """
-        Obtiene diccionario con ocupación de celdas desde AgentExtendido.instances.
-        
-        Returns:
-        Dict[Tuple[int, int], int] : {(x,y): num_agents}
-        """
-        agent_positions = {}
-        for agent in AgentExtendido.instances:
-            if agent.activo and agent.pos_x is not None and agent.pos_y is not None:
-                pos = (agent.pos_x, agent.pos_y)
-                agent_positions[pos] = agent_positions.get(pos, 0) + 1
-        return agent_positions
-    
-    def elegir_ruta(self, goal: Tuple[int, int], 
-                   agent_positions: Optional[Dict[Tuple[int, int], int]] = None):
-        """
-        Elige o recalcula la ruta del agente basándose en su estado.
-        
-        Determina si necesita recalcular usando should_recalculate.
-        Si necesita recalcular, encuentra 3 rutas alternativas y selecciona una
-        basándose en el nivel de ansiedad del agente.
+        IMPORTANTE:
+        - steps_without_moving se gestiona en mover_a(), NO aquí
+        - unlocked_paths_count determina cuántas rutas puede elegir
+        - Usar try/except para manejar fallos de pathfinding
         
         Parámetros:
         goal : Tuple[int, int]
-            Posición objetivo (puerta) (x, y)
+            Posición objetivo (puerta)
         agent_positions : Dict[Tuple[int, int], int], opcional
-            Diccionario con ocupación de celdas {(x,y): num_agents}.
-            Si None, se calcula automáticamente.
+            Diccionario con número de agentes en cada posición
         """
         if not self.usa_enrutamiento_inteligente or self.path_selector is None:
             return
         
-        # Obtener agent_positions si no se proporcionó
         if agent_positions is None:
-            agent_positions = self._get_agent_positions()
+            agent_positions = {}
+        
+        # IMPORTANTE: Reset flag al inicio de cada paso
+        self.recalculated_this_step = False
         
         pos_actual = (self.pos_x, self.pos_y)
         
-        # Determinar si necesita recalcular
+        # COOLDOWN: Verificar si pasó suficiente tiempo desde la última recalculación
+        # (inercia cognitiva: no cambiar estrategia instantáneamente)
+        current_step = getattr(self, '_current_simulation_step', 0)
+        steps_since_recalc = current_step - self.last_recalculation_step
+        
+        if steps_since_recalc < self.recalculation_cooldown and self.current_path is not None:
+            # Aún en cooldown, mantener ruta actual
+            return
+        
+        # VERIFICAR SI REALMENTE NECESITA RECALCULAR
         needs_recalc = (
             self.current_path is None or
             len(self.current_path) == 0 or
+            self.path_index >= len(self.current_path) or
             self.path_selector.should_recalculate(
                 agent_pos=pos_actual,
                 current_path=self.current_path,
                 path_index=self.path_index,
                 agent_positions=agent_positions,
-                steps_without_moving=self.steps_without_moving
+                steps_without_moving=self.steps_without_moving,
+                anxiety_level=None  # Ya no usar ansiedad para decidir recálculo
             )
         )
         
-        if needs_recalc:
-            # Encontrar 3 rutas alternativas
-            self.alternative_paths = self.path_selector.find_k_paths(
+        # SI NO NECESITA RECALCULAR, SALIR INMEDIATAMENTE
+        if not needs_recalc:
+            # Ya tiene una ruta válida, mantenerla
+            return
+        
+        # ========================================
+        # SI LLEGA AQUÍ, SÍ VA A RECALCULAR
+        # ========================================
+        
+        # NUEVO: Marcar que recalculó en este paso
+        self.recalculated_this_step = True
+        
+        # IMPORTANTE: Limpiar rutas antiguas antes de recalcular
+        self.all_calculated_paths = []
+        self.current_path = None
+        
+        # Si llega aquí, SÍ necesita recalcular
+        # Calcular unlocked_paths_count
+        current_stuck = self.steps_without_moving
+        unlocked_count = self.path_selector.calculate_unlocked_paths(
+            steps_without_moving=current_stuck,
+            calmness_threshold=self.calmness_threshold
+        )
+        
+        # Encontrar rutas
+        try:
+            all_paths = self.path_selector.find_progressive_paths(
                 start=pos_actual,
                 goal=goal,
-                k=3
+                num_paths=5
             )
-            
-            # Si se encontraron rutas, seleccionar basándose en ansiedad
-            if self.alternative_paths and len(self.alternative_paths) > 0:
-                # Seleccionar ruta basándose en ansiedad (0-100)
-                anxiety_level = float(self.ansiedad)  # Convertir a float si es necesario
-                self.current_path = self.path_selector.select_path_by_anxiety(
-                    k_paths=self.alternative_paths,
-                    anxiety_level=anxiety_level
+        except (ValueError, Exception) as e:
+            # Fallback: intentar con find_k_paths
+            try:
+                all_paths = self.path_selector.find_k_paths(
+                    start=pos_actual,
+                    goal=goal,
+                    k=min(5, unlocked_count)
                 )
-                
-                # Sincronizar con atributos de compatibilidad
-                self.ruta_planificada = self.current_path
-                
-                # Resetear índices y contadores
-                self.path_index = 0
-                self.steps_without_moving = 0
-                self.pasos_desde_recalculo = 0
-            else:
-                # No se encontraron rutas, limpiar
-                self.current_path = None
-                self.ruta_planificada = None
-    
-    def _movimiento_con_path_selector(self, 
-                                     goal: Optional[Tuple[int, int]] = None,
-                                     agent_positions: Optional[Dict[Tuple[int, int], int]] = None) -> Tuple[int, int]:
-        """
-        Movimiento inteligente usando PathSelector con A* y selección por ansiedad.
+            except Exception:
+                all_paths = []
         
-        Estrategia:
-        1. Llama a elegir_ruta para seleccionar/calcular ruta
-        2. Sigue la ruta planificada
-        3. Si ruta falla -> fallback a greedy
+        # Verificar que encontramos rutas
+        if not all_paths or len(all_paths) == 0:
+            # No se encontraron rutas, mantener la actual si existe
+            return
+        
+        # Seleccionar ruta según ansiedad
+        selected_path = self.path_selector.select_path_by_anxiety(
+            k_paths=all_paths,
+            anxiety_level=self.ansiedad,
+            num_available_paths=unlocked_count
+        )
+        
+        if selected_path is None or len(selected_path) == 0:
+            return
+        
+        # Actualizar ruta
+        self.current_path = selected_path
+        self.path_index = 0  # Empezar desde el inicio
+        self.all_calculated_paths = all_paths
+        self.unlocked_paths_count = unlocked_count
+        
+        # Registrar paso de recalculación para cooldown
+        current_step = getattr(self, '_current_simulation_step', 0)
+        self.last_recalculation_step = current_step
+    
+    def proponer_movimiento(self, goal: Optional[Tuple[int, int]] = None, 
+                           agent_positions: Optional[Dict[Tuple[int, int], int]] = None) -> Tuple[int, int]:
+        """
+        Propone siguiente movimiento.
+        
+        IMPORTANTE:
+        - Llama elegir_ruta() que solo recalcula si es necesario
+        - Retorna next_pos de la ruta actual
+        - NO incrementa path_index (se hace en mover_a)
         
         Parámetros:
         goal : Tuple[int, int], opcional
-            Posición objetivo (puerta). Si None, se calcula automáticamente.
+            Posición objetivo (puerta). Si es None, se calcula automáticamente
         agent_positions : Dict[Tuple[int, int], int], opcional
-            Diccionario con ocupación de celdas.
-        
+            Diccionario con número de agentes en cada posición
+            
         Returns:
-        Tuple[int, int] : Posición propuesta
+        Tuple[int, int]
+            Posición propuesta (x, y)
         """
-        pos_actual = (self.pos_x, self.pos_y)
+        if not self.activo or self.pos_x is None or self.pos_y is None:
+            return (self.pos_x, self.pos_y)
         
-        # Obtener goal si no se proporcionó
-        if goal is None:
-            if self.floor_field is not None and hasattr(self.floor_field, 'puertas'):
-                puertas = self.floor_field.puertas
-                if puertas:
-                    goal = self.path_selector.encontrar_mejor_puerta(pos_actual, puertas)
-                else:
-                    # Sin puertas, usar fallback
-                    return self._movimiento_greedy_floor_field()
-            else:
-                # Sin floor_field, usar fallback
+        if self.usa_enrutamiento_inteligente and self.path_selector is not None:
+            # Obtener agent_positions si no se proveyó
+            if agent_positions is None:
+                agent_positions = {}
+            
+            # Obtener goal si no se proveyó
+            if goal is None:
+                goal = self._encontrar_puerta_mas_cercana()
+            
+            if goal is None:
                 return self._movimiento_greedy_floor_field()
-        
-        # Elegir o recalcular ruta
-        self.elegir_ruta(goal, agent_positions)
-        
-        # Seguir la ruta planificada
-        if self.current_path and self.path_index < len(self.current_path):
+            
+            # Elegir/recalcular ruta (solo si es necesario)
+            self.elegir_ruta(goal, agent_positions)
+            
+            # Verificar que tenemos ruta válida
+            if self.current_path is None or len(self.current_path) == 0:
+                return self._movimiento_greedy_floor_field()
+            
+            # Verificar que path_index es válido
+            if self.path_index >= len(self.current_path):
+                return self._movimiento_greedy_floor_field()
+            
+            # Si path_index apunta a la posición actual, avanzar al siguiente
+            pos_actual = (self.pos_x, self.pos_y)
+            if (self.path_index < len(self.current_path) and 
+                self.current_path[self.path_index] == pos_actual):
+                self.path_index += 1
+            
+            # Verificar nuevamente después del ajuste
+            if self.path_index >= len(self.current_path):
+                return self._movimiento_greedy_floor_field()
+            
+            # Retornar SIGUIENTE posición en la ruta
             next_pos = self.current_path[self.path_index]
             
-            # Verificar que la siguiente posición es válida
-            if next_pos == pos_actual:
-                # Ya estamos en la posición objetivo, avanzar índice
-                self.path_index += 1
-                if self.path_index < len(self.current_path):
-                    next_pos = self.current_path[self.path_index]
-                else:
-                    # Llegamos al final de la ruta
-                    return pos_actual
-            else:
-                # Avanzar índice para la próxima vez
-                self.path_index += 1
+            # NO incrementar path_index aquí
+            # Se incrementa en mover_a() solo si el movimiento fue exitoso
             
             return next_pos
-        
-        # Fallback a comportamiento greedy
-        return self._movimiento_greedy_floor_field()
+        else:
+            # No usa PathSelector, usar greedy tradicional
+            return self._movimiento_greedy_floor_field()
     
-    def _proponer_movimiento_legacy(self) -> Tuple[int, int]:
-        """
-        Método legacy para compatibilidad con código existente.
-        Usa el comportamiento greedy original.
-        
-        Returns:
-        Tuple[int, int] : Posición propuesta
-        """
-        return self._movimiento_greedy_floor_field()
-
     def mover_a(self, nueva_x: int, nueva_y: int):
         """
-        Mueve el agente a la nueva posición.
+        Ejecuta movimiento y actualiza contadores.
+        
+        CRÍTICO:
+        - path_index se incrementa SOLO si se movió exitosamente
+        - steps_without_moving se resetea SOLO si se movió
+        - if_change debe calcularse ANTES de actualizar posición
+        
         Parámetros:
         nueva_x, nueva_y : int
-            Nueva posición
+            Nueva posición propuesta
         """
         if not self.activo:
             return
         
-        # Detectar si hubo cambio
+        # Detectar si hubo cambio ANTES de actualizar posición
         old_pos = (self.pos_x, self.pos_y)
-        self.if_change = (nueva_x != self.pos_x or nueva_y != self.pos_y)
+        new_pos = (nueva_x, nueva_y)
+        self.if_change = (old_pos != new_pos)
+        
+        # ========================================
+        # VALIDACIÓN: Detectar saltos extraños (anti-teletransporte)
+        # ========================================
+        if self.if_change:
+            # Distancia Manhattan
+            dist = abs(nueva_x - self.pos_x) + abs(nueva_y - self.pos_y)
+            
+            # Un movimiento normal es 1 (ortogonal) o 2 (diagonal)
+            # Si es > 2, algo está mal
+            if dist > 2:
+                # OPCIÓN: Forzar recalculación si el salto es muy grande
+                if dist > 3:
+                    # Salto excesivo, limpiar ruta
+                    self.current_path = None
+                    self.path_index = 0
+                    self.all_calculated_paths = []
         
         # Actualizar posición
         self.pos_x = nueva_x
         self.pos_y = nueva_y
         
-        # Actualizar contador de pasos sin moverse
         if self.if_change:
+            # ✅ SE MOVIÓ EXITOSAMENTE
             self.steps_without_moving = 0
-            self.pasos_desde_recalculo = 0
+            
+            # Guardar en historial de trayectoria
+            self.trajectory_history.append((nueva_x, nueva_y))
+            
+            # ========================================
+            # Incrementar path_index solo si fue correcto
+            # ========================================
+            if self.current_path and len(self.current_path) > 0:
+                expected_pos = None
+                if self.path_index < len(self.current_path):
+                    expected_pos = self.current_path[self.path_index]
+                
+                if expected_pos and new_pos == expected_pos:
+                    # ✅ Movimiento correcto según la ruta
+                    self.path_index += 1
+                else:
+                    # ⚠ Se desvió de la ruta planificada
+                    # Esto puede pasar por conflictos con otros agentes
+                    
+                    # Verificar si la nueva posición está en alguna parte de la ruta
+                    if new_pos in self.current_path:
+                        # Buscar índice
+                        try:
+                            new_index = self.current_path.index(new_pos)
+                            # Solo actualizar si está ADELANTE
+                            if new_index > self.path_index:
+                                self.path_index = new_index + 1
+                            else:
+                                # Se movió hacia atrás o está en el mismo lugar, mantener índice
+                                if new_index == self.path_index:
+                                    self.path_index += 1
+                                # Si está atrás, no avanzar
+                        except ValueError:
+                            # No está en la ruta, avanzar índice de todas formas
+                            if self.path_index < len(self.current_path):
+                                self.path_index += 1
+                    else:
+                        # No está en la ruta, avanzar índice de todas formas
+                        if self.path_index < len(self.current_path):
+                            self.path_index += 1
+            
+            # Reducir ansiedad
+            reduction = max(1, int(self.ansiedad * 0.1))
+            self.ansiedad = max(0, self.ansiedad - reduction)
+            
         else:
+            # ❌ NO SE MOVIÓ (quedó en el mismo lugar)
             self.steps_without_moving += 1
-            self.pasos_desde_recalculo += 1
+            
+            # NO incrementar path_index
+            # La ruta sigue siendo válida, simplemente no pudo avanzar este paso
+            
+            # Aumentar ansiedad
+            increase = min(5, 1 + (self.steps_without_moving // 2))
+            self.ansiedad = min(100, self.ansiedad + increase)
         
-        # Verificar si llegó a la salida (valor = 0 en floor_field)
+        # Verificar si llegó a puerta (valor = 0)
         if self.floor_field is not None:
-            if self.floor_field.valores[self.pos_y, self.pos_x] == 0:
-                self.activo = False
-                # Limpiar ruta cuando evacua
-                self.current_path = None
-                self.ruta_planificada = None
+            try:
+                if self.floor_field.valores[self.pos_y, self.pos_x] == 0:
+                    self.activo = False
+                    # Limpiar rutas
+                    self.current_path = None
+                    self.all_calculated_paths = []
+                    self.path_index = 0
+            except (IndexError, AttributeError):
+                pass
     
-    def __repr__(self):
-        """Representación para debugging"""
-        estado = "activo" if self.activo else "evacuado"
-        return f"Agent#{self.id}({self.pos_x},{self.pos_y})[{self.tipo}][{estado}]"
+    def _movimiento_greedy_floor_field(self) -> Tuple[int, int]:
+        """
+        Fallback: movimiento greedy tradicional usando floor field.
+        
+        Usar cuando:
+        - No hay PathSelector
+        - Falla el pathfinding
+        - Modo de emergencia
+        
+        Lógica: Moverse al vecino con menor valor de floor_field (más cerca de la puerta).
+        
+        Returns:
+        Tuple[int, int]
+            Posición propuesta (x, y)
+        """
+        if self.floor_field is None:
+            # Sin floor_field, quedarse en su lugar
+            return (self.pos_x, self.pos_y)
+        
+        # Obtener valor actual
+        try:
+            mejor_valor = self.floor_field.valores[self.pos_y, self.pos_x]
+        except (IndexError, AttributeError):
+            return (self.pos_x, self.pos_y)
+        
+        mejor_pos = (self.pos_x, self.pos_y)
+        
+        # Revisar vecinos (4 direcciones: N, S, E, O)
+        direcciones = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+        
+        for dx, dy in direcciones:
+            nx = self.pos_x + dx
+            ny = self.pos_y + dy
+            
+            # Verificar límites
+            if (0 <= nx < self.floor_field.width and 
+                0 <= ny < self.floor_field.height):
+                try:
+                    v = self.floor_field.valores[ny, nx]
+                    # Valor válido: < 500 (no es obstáculo)
+                    # Preferir valores menores (más cerca de puerta)
+                    if v < 500 and v < mejor_valor:
+                        mejor_valor = v
+                        mejor_pos = (nx, ny)
+                except (IndexError, AttributeError):
+                    continue
+        
+        return mejor_pos
+    
+    def _encontrar_puerta_mas_cercana(self) -> Optional[Tuple[int, int]]:
+        """
+        Encuentra la puerta más cercana al agente.
+        
+        Returns:
+        Tuple[int, int] o None
+            Posición de la puerta más cercana, o None si no hay puertas
+        """
+        if self.floor_field is None or not hasattr(self.floor_field, 'puertas'):
+            return None
+        
+        if not self.floor_field.puertas:
+            return None
+        
+        # Encontrar puerta con menor distancia Manhattan
+        min_dist = float('inf')
+        puerta_cercana = None
+        
+        for puerta in self.floor_field.puertas:
+            dist = abs(self.pos_x - puerta[0]) + abs(self.pos_y - puerta[1])
+            if dist < min_dist:
+                min_dist = dist
+                puerta_cercana = puerta
+        
+        return puerta_cercana
 
-# ========== FUNCIONES DE MOVIMIENTO CON RESOLUCIÓN DE CONFLICTOS ==========
 
-def mover_agentes_con_conflictos(agentes: list[AgentExtendido]) -> dict:
+def mover_agentes_con_conflictos(agentes: List[AgentExtendido], 
+                                 goals: Optional[Dict[int, Tuple[int, int]]] = None) -> Dict:
     """
-    Mueve todos los agentes resolviendo conflictos con priorización (movimiento
-    automático inteligente basado en floor_field).
+    Mueve todos los agentes resolviendo conflictos.
     
-    Reglas:
-    1. Cada agente propone su movimiento (según floor_field)
-    2. Si varios quieren la misma celda:
-       - Prioridad a 'rapidos' sobre 'lentos'
-       - Si empate de tipo, azar
-    3. Los perdedores se quedan quietos
-    4. Se registran conflictos
-    5. NUNCA dos agentes pueden estar en la misma celda
+    FLUJO:
+    1. Cada agente propone movimiento (proponer_movimiento)
+    2. Detectar conflictos (varios → misma celda)
+    3. Resolver conflictos:
+       - Prioridad: 'rapido' > 'lento'
+       - Si empate: random
+       - Ganador: ejecuta mover_a(destino)
+       - Perdedores: ejecutan mover_a(posición_actual)
+    4. Registrar stats
+    
+    IMPORTANTE:
+    - NUNCA dos agentes en misma celda
+    - mover_a() gestiona steps_without_moving automáticamente
+    - Registrar conflictos_totales y conflictos_perdidos
     
     Parámetros:
-    agentes : list[AgentExtendido]
+    agentes : List[AgentExtendido]
         Lista de agentes a mover
-    
-    Retorna:
-    dict : Estadísticas del paso
-        - 'conflictos_totales': número de celdas con conflicto
-        - 'agentes_en_conflicto': agentes involucrados
-        - 'movimientos': agentes que se movieron
+    goals : Dict[int, Tuple[int, int]], opcional
+        Diccionario {agente_id: goal} con objetivos específicos por agente
+        
+    Returns:
+    Dict
+        Estadísticas del movimiento:
+        - 'movidos': número de agentes que se movieron
+        - 'conflictos': número de conflictos detectados
+        - 'resueltos': número de conflictos resueltos
     """
-    propuestas = {}
+    if not agentes:
+        return {'movidos': 0, 'conflictos': 0, 'resueltos': 0}
     
     # Paso 1: Cada agente propone su movimiento
-    for agente in agentes:
-        if agente.activo:
-            destino = agente.proponer_movimiento()
-            propuestas.setdefault(destino, []).append(agente)
+    propuestas = {}  # {agente_id: (x, y)}
+    agent_positions = {}  # {(x, y): [agente_id, ...]}
     
-    # Paso 2: Resolver conflictos y asegurar que no haya dos agentes en la misma celda
-    stats = {
-        'conflictos_totales': 0,
-        'agentes_en_conflicto': 0,
-        'movimientos': 0
-    }
-    
-    # Rastrear qué celdas están ocupadas después de los movimientos
-    celdas_ocupadas = {}
-    
-    # Primero, registrar las posiciones actuales de los agentes activos
+    # Calcular posiciones actuales
     for agente in agentes:
         if agente.activo and agente.pos_x is not None and agente.pos_y is not None:
-            pos_actual = (agente.pos_x, agente.pos_y)
-            celdas_ocupadas[pos_actual] = agente
+            pos = (agente.pos_x, agente.pos_y)
+            if pos not in agent_positions:
+                agent_positions[pos] = []
+            agent_positions[pos].append(agente.id)
     
-    # Procesar propuestas en orden de prioridad
-    for destino, lista_agentes in propuestas.items():
-        # Verificar si el destino ya está ocupado por otro agente que ya se movió
-        if destino in celdas_ocupadas:
-            # El destino ya está ocupado, todos los que querían ir ahí se quedan quietos
-            stats['conflictos_totales'] += 1
-            stats['agentes_en_conflicto'] += len(lista_agentes)
-            
-            for a in lista_agentes:
-                a.conflictos_totales += 1
-                a.conflictos_perdidos += 1
-                a.if_change = False
+    # Obtener propuestas de movimiento
+    for agente in agentes:
+        if not agente.activo:
             continue
         
-        if len(lista_agentes) == 1:
-            # Sin conflicto entre agentes que quieren esta celda
-            agente = lista_agentes[0]
-            # Verificar que el agente realmente se puede mover (no está ya en esa posición)
-            if agente.pos_x != destino[0] or agente.pos_y != destino[1]:
-                agente.mover_a(destino[0], destino[1])
-                if agente.if_change:
-                    stats['movimientos'] += 1
-                    # Marcar la celda como ocupada
-                    celdas_ocupadas[destino] = agente
-        else:
-            # CONFLICTO: varios quieren la misma celda
-            stats['conflictos_totales'] += 1
-            stats['agentes_en_conflicto'] += len(lista_agentes)
-            
-            # Registrar conflicto en todos
-            for a in lista_agentes:
-                a.conflictos_totales += 1
-            
-            # Priorización: rapidos > lentos
-            rapidos = [a for a in lista_agentes if a.tipo == 'rapido']
-            lentos = [a for a in lista_agentes if a.tipo == 'lento']
-            
-            if rapidos:
-                elegido = random.choice(rapidos)
-            else:
-                elegido = random.choice(lentos)
-            
-            # Mover al ganador solo si realmente se puede mover
-            if elegido.pos_x != destino[0] or elegido.pos_y != destino[1]:
-                elegido.mover_a(destino[0], destino[1])
-                if elegido.if_change:
-                    stats['movimientos'] += 1
-                    # Marcar la celda como ocupada
-                    celdas_ocupadas[destino] = elegido
-            
-            # Perdedores se quedan quietos
-            for otro in lista_agentes:
-                if otro != elegido:
-                    otro.conflictos_perdidos += 1
-                    otro.if_change = False
+        # Obtener goal específico si existe
+        goal = None
+        if goals and agente.id in goals:
+            goal = goals[agente.id]
+        
+        # Proponer movimiento
+        destino = agente.proponer_movimiento(goal, agent_positions)
+        propuestas[agente.id] = destino
     
-    return stats
+    # Paso 2: Detectar conflictos
+    destinos_agentes = {}  # {(x, y): [agente_id, ...]}
+    for agente_id, destino in propuestas.items():
+        if destino not in destinos_agentes:
+            destinos_agentes[destino] = []
+        destinos_agentes[destino].append(agente_id)
+    
+    # Paso 3: Resolver conflictos y mover
+    movidos = 0
+    conflictos_totales = 0
+    conflictos_resueltos = 0
+    
+    # Crear diccionario de agentes por ID para acceso rápido
+    agentes_dict = {agente.id: agente for agente in agentes}
+    
+    # Procesar cada destino
+    for destino, agentes_ids in destinos_agentes.items():
+        if len(agentes_ids) == 1:
+            # Sin conflicto: mover directamente
+            agente_id = agentes_ids[0]
+            agente = agentes_dict[agente_id]
+            if agente.activo:
+                agente.mover_a(*destino)
+                movidos += 1
+        else:
+            # CONFLICTO: varios agentes quieren la misma celda
+            conflictos_totales += 1
+            
+            # Ordenar agentes por prioridad:
+            # 1. El más cercano a la meta (menor valor floor_field) tiene prioridad
+            # 2. Si empate: 'rapido' > 'lento'
+            # 3. Si empate: random
+            agentes_conflicto = [agentes_dict[aid] for aid in agentes_ids if aid in agentes_dict]
+            
+            def get_priority(agente):
+                # Prioridad 1: Valor floor_field (menor = más cerca de meta)
+                if agente.floor_field is not None:
+                    try:
+                        floor_value = agente.floor_field.valores[agente.pos_y, agente.pos_x]
+                    except (IndexError, AttributeError):
+                        floor_value = 500  # Valor alto si hay error
+                else:
+                    floor_value = 500
+                
+                # Prioridad 2: Tipo (rapido > lento)
+                tipo_priority = 0 if agente.tipo == 'rapido' else 1
+                
+                # Prioridad 3: Random (para desempatar)
+                random_priority = random.random()
+                
+                return (floor_value, tipo_priority, random_priority)
+            
+            agentes_conflicto.sort(key=get_priority)
+            
+            # El primero gana, los demás se quedan
+            ganador = agentes_conflicto[0]
+            perdedores = agentes_conflicto[1:]
+            
+            # Mover ganador
+            if ganador.activo:
+                ganador.mover_a(*destino)
+                movidos += 1
+                ganador.conflictos_totales += 1
+            
+            # Perdedores se quedan en su lugar (mover_a a posición actual)
+            for perdedor in perdedores:
+                if perdedor.activo:
+                    perdedor.mover_a(perdedor.pos_x, perdedor.pos_y)
+                    perdedor.conflictos_totales += 1
+                    perdedor.conflictos_perdidos += 1
+            
+            conflictos_resueltos += 1
+    
+    return {
+        'movidos': movidos,
+        'conflictos': conflictos_totales,
+        'resueltos': conflictos_resueltos
+    }

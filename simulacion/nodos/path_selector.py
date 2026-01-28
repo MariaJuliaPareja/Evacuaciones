@@ -44,7 +44,8 @@ class PathSelector:
             'calls': 0,           # Total de llamadas a encontrar_ruta_a_star
             'cache_hits': 0,      # Rutas encontradas en caché
             'nodes_explored': [],  # Lista de nodos explorados por búsqueda
-            'recalculations_by_anxiety': {'low': 0, 'medium': 0, 'high': 0}  # Recalculaciones por ansiedad
+            'recalculations_by_anxiety': {'low': 0, 'medium': 0, 'high': 0},  # Recalculaciones por ansiedad
+            'paths_unlocked_by_level': {1: 0, 3: 0, 5: 0}  # Desbloqueos por nivel
         }
         
         # Log de decisiones de selección por ansiedad
@@ -403,6 +404,53 @@ class PathSelector:
         
         return total_unicas / total_celdas
     
+    def find_progressive_paths(self, start: Tuple[int, int], goal: Tuple[int, int], 
+                               num_paths: int, penalty_factor: float = 0.5) -> List[List[Tuple[int, int]]]:
+        """
+        Find num_paths alternative routes (1, 3, or 5).
+        
+        This method validates num_paths and uses the existing find_k_paths logic
+        to find the requested number of paths. It's designed for the progressive
+        unlocking system where agents unlock more paths as they get stuck.
+        
+        The progression 1→3→5 was chosen to provide:
+        - Initial efficiency: Start with optimal path only
+        - Moderate options: 3 paths when stuck (good balance)
+        - Maximum flexibility: 5 paths when severely stuck (panic mode)
+        
+        Args:
+            start: Starting position (x, y)
+            goal: Goal position (x, y)
+            num_paths: Number of paths to calculate (must be 1, 3, or 5)
+            penalty_factor: Penalty for reused cells (default 0.5)
+        
+        Returns:
+            List of paths, length = num_paths (or fewer if not enough paths found)
+        
+        Raises:
+            ValueError: If num_paths is not 1, 3, or 5
+        
+        Example:
+            >>> paths = ps.find_progressive_paths((10, 10), (0, 0), num_paths=3)
+            >>> len(paths)  # Should be 3 (or fewer if not enough alternatives)
+        """
+        # Validate num_paths - only allow 1, 3, or 5 for progressive unlocking
+        # This restriction ensures consistent behavior and prevents excessive computation
+        if num_paths not in [1, 3, 5]:
+            raise ValueError(f"num_paths must be 1, 3, or 5, got {num_paths}")
+        
+        # Use existing find_k_paths logic with the requested number
+        # This reuses the proven k-paths algorithm with penalty-based diversification
+        paths = self.find_k_paths(start, goal, k=num_paths, penalty_factor=penalty_factor)
+        
+        # Track statistics for analysis
+        # Record which unlock level was requested (even if fewer paths were found)
+        if paths:
+            if num_paths in self.stats['paths_unlocked_by_level']:
+                self.stats['paths_unlocked_by_level'][num_paths] += 1
+        
+        return paths
+    
     def find_k_paths(self, start: Tuple[int, int], goal: Tuple[int, int], 
                     k: int = 3, penalty_factor: float = 0.5) -> List[List[Tuple[int, int]]]:
         """
@@ -692,7 +740,8 @@ class PathSelector:
             'densidad_promedio': np.mean(list(self.densidad_local.values())) if self.densidad_local else 0.0,
             'cache_size': len(self.path_cache),
             'nodes_explored_total': sum(nodes_explored),
-            'recalculations_by_anxiety': self.stats['recalculations_by_anxiety'].copy()
+            'recalculations_by_anxiety': self.stats['recalculations_by_anxiety'].copy(),
+            'paths_unlocked_by_level': self.stats['paths_unlocked_by_level'].copy()
         }
     
     def reset_statistics(self):
@@ -704,7 +753,8 @@ class PathSelector:
             'calls': 0,
             'cache_hits': 0,
             'nodes_explored': [],
-            'recalculations_by_anxiety': {'low': 0, 'medium': 0, 'high': 0}
+            'recalculations_by_anxiety': {'low': 0, 'medium': 0, 'high': 0},
+            'paths_unlocked_by_level': {1: 0, 3: 0, 5: 0}
         }
         self.anxiety_decisions = []
         self.rutas_calculadas = 0
@@ -897,8 +947,10 @@ class PathSelector:
                 self._log_recalculation_by_anxiety(anxiety_level, 'invalid_path')
             return True
         
-        # Condición 2: Estancamiento (no se ha movido en varios pasos)
-        if steps_without_moving >= 3:
+        # Condición 2: Estancamiento significativo (umbral más alto para mayor persistencia)
+        # Solo recalcular si está MUY estancado (8+ pasos) para evitar recálculos innecesarios
+        # Mayor persistencia antes de reconsiderar (justificación psicológica)
+        if steps_without_moving >= 8:  # 8+ pasos (umbral más alto)
             if anxiety_level is not None:
                 self._log_recalculation_by_anxiety(anxiety_level, 'stagnation')
             self.logger.debug(f"Recalculation triggered: stagnation (steps={steps_without_moving})")
@@ -1109,7 +1161,8 @@ class PathSelector:
     
     def select_path_by_anxiety(self, k_paths: List[List[Tuple[int, int]]],
                                anxiety_level: float,
-                               anxiety_thresholds: Optional[Tuple[int, int]] = None) -> List[Tuple[int, int]]:
+                               anxiety_thresholds: Optional[Tuple[int, int]] = None,
+                               num_available_paths: Optional[int] = None) -> List[Tuple[int, int]]:
         """
         Selecciona una ruta de k_paths basándose en el nivel de ansiedad del agente.
         
@@ -1121,12 +1174,15 @@ class PathSelector:
         
         Parámetros:
         k_paths : List[List[(x,y)]]
-            Lista con rutas alternativas [óptima, media, subóptima]
-            Debe tener al menos 1 ruta, preferiblemente 3
+            Lista con rutas alternativas [óptima, media, subóptima, ...]
+            Puede tener 1, 3, o 5 rutas dependiendo del desbloqueo progresivo
         anxiety_level : float
             Nivel de ansiedad del agente (0-100)
         anxiety_thresholds : Tuple[int, int], opcional
             Umbrales de ansiedad (mild_max, optimal_max). Si None, usa self.anxiety_thresholds
+        num_available_paths : int, opcional
+            Número de rutas desbloqueadas (1, 3, o 5). Si None, usa todas las rutas disponibles.
+            Si se proporciona, solo considera las primeras num_available_paths rutas.
             
         Returns:
         selected_path : List[(x,y)]
@@ -1139,9 +1195,20 @@ class PathSelector:
         # Usar umbrales proporcionados o los del objeto
         mild_threshold, optimal_threshold = anxiety_thresholds if anxiety_thresholds else self.anxiety_thresholds
         
-        # Asegurar que tenemos al menos 3 rutas (rellenar con la primera si es necesario)
-        while len(k_paths) < 3:
-            k_paths.append(k_paths[0])
+        # Si se especifica num_available_paths, limitar las rutas disponibles
+        if num_available_paths is not None:
+            if num_available_paths not in [1, 3, 5]:
+                raise ValueError(f"num_available_paths must be 1, 3, or 5, got {num_available_paths}")
+            # Solo considerar las primeras num_available_paths rutas
+            available_paths = k_paths[:num_available_paths]
+        else:
+            # Comportamiento legacy: usar todas las rutas disponibles
+            available_paths = k_paths
+        
+        # Asegurar que tenemos al menos 3 rutas para la lógica de selección
+        # (rellenar con la primera si es necesario, pero solo hasta el límite de available_paths)
+        while len(available_paths) < 3 and len(available_paths) < len(k_paths):
+            available_paths.append(available_paths[0] if available_paths else k_paths[0])
         
         # Limitar ansiedad al rango válido
         anxiety_level = max(0.0, min(100.0, anxiety_level))
@@ -1150,33 +1217,88 @@ class PathSelector:
         selection_reason = ""
         noise_added = False
         
+        # Calcular longitudes de rutas para ajustar pesos
+        path_lengths = [len(path) for path in available_paths]
+        min_length = min(path_lengths) if path_lengths else 1
+        
+        # Ajustar pesos según número de rutas disponibles y longitud
+        if len(available_paths) == 1:
+            # Solo una ruta disponible: siempre usar esa
+            weights = [1.0]
+        elif len(available_paths) == 3:
+            # Tres rutas disponibles: usar distribución estándar
+            if anxiety_level <= optimal_threshold:
+                weights = [0.7, 0.2, 0.1]
+            else:
+                # Alta ansiedad: preferir rutas más cortas (que parecen mejores)
+                weights = []
+                for i, length in enumerate(path_lengths):
+                    # Mayor peso para rutas más cortas
+                    weight = (min_length / length) if length > 0 else 1.0
+                    weights.append(weight)
+                # Normalizar
+                total = sum(weights)
+                weights = [w / total for w in weights]
+        else:  # 5 rutas disponibles
+            # Cinco rutas: distribución más amplia
+            if anxiety_level <= mild_threshold:
+                weights = [1.0, 0.0, 0.0, 0.0, 0.0]  # Siempre óptima
+            elif anxiety_level <= optimal_threshold:
+                weights = [0.5, 0.2, 0.15, 0.1, 0.05]  # Preferencia por primeras rutas
+            else:
+                # Alta ansiedad: preferir rutas más cortas (que parecen mejores)
+                # Con ansiedad alta, preferir rutas que parecen mejores (más cortas)
+                weights = []
+                for i, length in enumerate(path_lengths):
+                    # Mayor peso para rutas más cortas
+                    weight = (min_length / length) if length > 0 else 1.0
+                    weights.append(weight)
+                # Normalizar
+                total = sum(weights)
+                weights = [w / total for w in weights]
+        
+        # Normalizar pesos si es necesario
+        if len(weights) > len(available_paths):
+            weights = weights[:len(available_paths)]
+        elif len(weights) < len(available_paths):
+            weights.extend([0.0] * (len(available_paths) - len(weights)))
+        
         # Lógica de selección según nivel de ansiedad
         if anxiety_level <= mild_threshold:
             # Baja ansiedad (0-30): Siempre ruta óptima
-            selected_path = k_paths[0]
+            selected_path = available_paths[0]
             selection_reason = f"Baja ansiedad ({anxiety_level:.1f}): Ruta óptima"
         
         elif anxiety_level <= optimal_threshold:
             # Ansiedad óptima (30-70): Distribución probabilística
-            weights = [0.7, 0.2, 0.1]  # 70% óptima, 20% media, 10% subóptima
-            selected_path = random.choices(k_paths[:3], weights=weights)[0]
-            path_index = k_paths.index(selected_path)
-            path_type = ["óptima", "media", "subóptima"][path_index]
+            if len(available_paths) == 1:
+                selected_path = available_paths[0]
+                path_index = 0
+            else:
+                selected_path = random.choices(available_paths, weights=weights)[0]
+                path_index = available_paths.index(selected_path)
+            path_type = ["óptima", "media", "subóptima", "alternativa 4", "alternativa 5"][min(path_index, 4)]
             selection_reason = f"Ansiedad óptima ({anxiety_level:.1f}): Ruta {path_type} (probabilística)"
         
         else:
             # Alta ansiedad/Pánico (70-100): Distribución con preferencia por subóptima
-            weights = [0.3, 0.3, 0.4]  # 30% óptima, 30% media, 40% subóptima
-            selected_path = random.choices(k_paths[:3], weights=weights)[0]
-            path_index = k_paths.index(selected_path)
-            path_type = ["óptima", "media", "subóptima"][path_index]
+            if len(available_paths) == 1:
+                selected_path = available_paths[0]
+                path_index = 0
+            else:
+                selected_path = random.choices(available_paths, weights=weights)[0]
+                path_index = available_paths.index(selected_path)
+            path_type = ["óptima", "media", "subóptima", "alternativa 4", "alternativa 5"][min(path_index, 4)]
             selection_reason = f"Alta ansiedad/Pánico ({anxiety_level:.1f}): Ruta {path_type} (probabilística)"
             
             # Añadir ruido con 10% de probabilidad (movimientos erráticos)
+            # Guardar índice antes de añadir ruido (ya que el path modificado no estará en la lista)
+            original_path_index = path_index
             if random.random() < 0.1:
                 selected_path = self._add_path_noise(selected_path)
                 noise_added = True
                 selection_reason += " + Ruido añadido (comportamiento errático)"
+                path_index = original_path_index  # Mantener índice original
         
         # Log de la decisión para análisis posterior
         decision_log = {
@@ -1186,7 +1308,8 @@ class PathSelector:
                 'óptima' if anxiety_level <= optimal_threshold else
                 'alta/pánico'
             ),
-            'selected_path_index': k_paths.index(selected_path) if selected_path in k_paths else -1,
+            'selected_path_index': path_index if 'path_index' in locals() else (available_paths.index(selected_path) if selected_path in available_paths else -1),
+            'num_available_paths': num_available_paths if num_available_paths is not None else len(k_paths),
             'path_length': len(selected_path),
             'noise_added': noise_added,
             'reason': selection_reason,
@@ -1197,10 +1320,52 @@ class PathSelector:
         # Logging automático
         anxiety_category = decision_log['anxiety_category']
         self.logger.info(f"Path selected by anxiety: level={anxiety_level:.1f}, category={anxiety_category}, "
-                        f"path_index={decision_log['selected_path_index']}, length={len(selected_path)}, "
-                        f"noise={noise_added}")
+                        f"path_index={decision_log['selected_path_index']}, num_available={decision_log['num_available_paths']}, "
+                        f"length={len(selected_path)}, noise={noise_added}")
         
         return selected_path
+    
+    def calculate_unlocked_paths(self, steps_without_moving: int, 
+                                 calmness_threshold: int = 3) -> int:
+        """
+        Calculate how many paths should be unlocked based on stagnation.
+        
+        Progressive unlocking system:
+        - 0-2 steps stuck: 1 path (low anxiety, calm)
+        - 3-4 steps stuck: 3 paths (medium anxiety, getting concerned)
+        - 5+ steps stuck: 5 paths (high anxiety, panicking)
+        
+        The calmness_threshold=3 was chosen because:
+        - It's sensitive enough to detect real stagnation (not just temporary delays)
+        - It's not too sensitive to avoid unnecessary path calculations
+        - It provides a good balance between efficiency and flexibility
+        
+        The 1→3→5 progression provides:
+        - Efficiency: Start with optimal path only (reduces computation)
+        - Balance: 3 paths offer good alternatives without overwhelming choices
+        - Flexibility: 5 paths when severely stuck (maximum exploration)
+        
+        Args:
+            steps_without_moving: Consecutive steps agent hasn't moved
+            calmness_threshold: Base threshold for unlocking paths (default 3)
+        
+        Returns:
+            Number of paths to unlock (1, 3, or 5)
+        
+        Example:
+            >>> unlocked = ps.calculate_unlocked_paths(0, calmness_threshold=3)
+            >>> unlocked  # Returns 1
+            >>> unlocked = ps.calculate_unlocked_paths(3, calmness_threshold=3)
+            >>> unlocked  # Returns 3
+            >>> unlocked = ps.calculate_unlocked_paths(5, calmness_threshold=3)
+            >>> unlocked  # Returns 5
+        """
+        if steps_without_moving < calmness_threshold:
+            return 1
+        elif steps_without_moving < calmness_threshold + 2:
+            return 3
+        else:
+            return 5
     
     def get_anxiety_statistics(self) -> Dict:
         """

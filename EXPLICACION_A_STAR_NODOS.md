@@ -318,9 +318,82 @@ h = √(3² + 4²) = √(9 + 16) = √25 = 5.0
 
 ---
 
-### 5. `select_path_by_anxiety(k_paths, anxiety_level)`
+### 4b. `find_progressive_paths(start, goal, num_paths, penalty_factor=0.5)`
 
-**Propósito:** Selecciona una ruta de k_paths según nivel de ansiedad.
+**Propósito:** Encuentra rutas alternativas con sistema progresivo (1, 3, o 5 rutas).
+
+**Parámetros:**
+- `start`: Tuple (x, y) - Posición inicial
+- `goal`: Tuple (x, y) - Posición objetivo
+- `num_paths`: int - Número de rutas a calcular (debe ser 1, 3, o 5)
+- `penalty_factor`: float - Factor de penalización para celdas reutilizadas (default: 0.5)
+
+**Proceso:**
+1. Valida que `num_paths` sea 1, 3, o 5 (lanza ValueError si no)
+2. Actualiza estadísticas de desbloqueo por nivel
+3. Llama a `find_k_paths()` con el número solicitado
+4. Retorna lista de rutas alternativas
+
+**Uso:** Parte del sistema de desbloqueo progresivo que permite a los agentes tener más opciones cuando están atascados.
+
+**Ejemplo:**
+```python
+# Calcular 1 ruta (inicial)
+paths_1 = ps.find_progressive_paths(start, goal, num_paths=1)
+
+# Calcular 3 rutas (ansiedad media)
+paths_3 = ps.find_progressive_paths(start, goal, num_paths=3)
+
+# Calcular 5 rutas (ansiedad alta)
+paths_5 = ps.find_progressive_paths(start, goal, num_paths=5)
+```
+
+---
+
+### 4c. `calculate_unlocked_paths(steps_without_moving, calmness_threshold=3)`
+
+**Propósito:** Calcula cuántas rutas deben estar desbloqueadas según el tiempo que el agente lleva sin moverse.
+
+**Parámetros:**
+- `steps_without_moving`: int - Pasos consecutivos sin moverse
+- `calmness_threshold`: int - Umbral base para desbloquear rutas (default: 3)
+
+**Lógica de Desbloqueo:**
+```
+steps_without_moving < calmness_threshold     → 1 ruta
+calmness_threshold ≤ steps < calmness_threshold + 2  → 3 rutas
+steps_without_moving ≥ calmness_threshold + 2  → 5 rutas
+```
+
+**Ejemplo con calmness_threshold=3:**
+- 0-2 pasos atascado → 1 ruta (baja ansiedad)
+- 3-4 pasos atascado → 3 rutas (ansiedad media)
+- 5+ pasos atascado → 5 rutas (alta ansiedad)
+
+**Razón del diseño:**
+- `calmness_threshold=3` fue elegido porque permite detectar estancamiento real sin ser demasiado sensible a bloqueos temporales
+- La progresión 1→3→5 proporciona suficiente variedad sin sobrecargar el sistema con demasiadas opciones
+- Los agentes empiezan con la ruta óptima y solo exploran alternativas cuando realmente están atascados
+
+**Diagrama de Progresión:**
+```
+Pasos sin moverse:  0    1    2    3    4    5    6    7+
+Rutas desbloqueadas: [1] [1] [1] [3] [3] [5] [5] [5]
+                     └─ Baja ansiedad ─┘ └─ Media ─┘ └─ Alta ─┘
+```
+
+---
+
+---
+
+### 5. `select_path_by_anxiety(k_paths, anxiety_level, num_available_paths=None)`
+
+**Propósito:** Selecciona una ruta de k_paths según nivel de ansiedad, considerando solo las rutas desbloqueadas.
+
+**Parámetros:**
+- `k_paths`: Lista de rutas alternativas
+- `anxiety_level`: float - Nivel de ansiedad (0-100)
+- `num_available_paths`: int (opcional) - Número de rutas desbloqueadas (1, 3, o 5). Si None, usa todas las rutas en k_paths.
 
 **Lógica:**
 - **Ansiedad baja (0-30)**: Siempre ruta óptima (índice 0)
@@ -333,6 +406,11 @@ h = √(3² + 4²) = √(9 + 16) = √25 = 5.0
   - 30% probabilidad: ruta media
   - 40% probabilidad: ruta subóptima
   - 10% probabilidad adicional: añade ruido (movimientos erráticos)
+
+**Comportamiento con num_available_paths:**
+- Si se proporciona, solo considera las primeras `num_available_paths` rutas de `k_paths`
+- Esto permite que el sistema de desbloqueo progresivo funcione correctamente
+- Ejemplo: Si `num_available_paths=3`, solo selecciona de las primeras 3 rutas, incluso si hay 5 calculadas
 
 ---
 
@@ -548,6 +626,45 @@ A* ahora evita esta celda si hay alternativas mejores.
 3. Validación: Nueva ruta debe tener >30% celdas distintas
 
 **Uso:** Permite selección probabilística según ansiedad.
+
+---
+
+### 3b. Progressive Path Unlocking (Desbloqueo Progresivo)
+
+**Propósito:** Sistema que aumenta el número de rutas disponibles según el tiempo que el agente lleva atascado.
+
+**Cómo funciona:**
+1. **Estado inicial**: Agente tiene 1 ruta óptima desbloqueada
+2. **Detección de estancamiento**: Se cuenta `steps_without_moving`
+3. **Desbloqueo progresivo**:
+   - 0-2 pasos: 1 ruta (baja ansiedad)
+   - 3-4 pasos: 3 rutas (ansiedad media)
+   - 5+ pasos: 5 rutas (alta ansiedad)
+4. **Almacenamiento**: Todas las rutas calculadas se guardan en `all_calculated_paths`
+5. **Selección**: Solo se selecciona de las rutas desbloqueadas según ansiedad
+
+**Visualización:**
+```
+Agente atascado 0 pasos:  [Ruta 1] ────────────────→ Meta
+                           (1 ruta desbloqueada)
+
+Agente atascado 3 pasos:  [Ruta 1] ────────────────→ Meta
+                          [Ruta 2] ────┐
+                          [Ruta 3] ────┴───────────→ Meta
+                          (3 rutas desbloqueadas)
+
+Agente atascado 5+ pasos: [Ruta 1] ────────────────→ Meta
+                          [Ruta 2] ────┐
+                          [Ruta 3] ────┼───────────→ Meta
+                          [Ruta 4] ────┤
+                          [Ruta 5] ────┘
+                          (5 rutas desbloqueadas)
+```
+
+**Ventajas:**
+- Reduce carga computacional inicial (solo calcula lo necesario)
+- Proporciona más opciones cuando realmente se necesitan
+- Mejora la eficiencia de evacuación en escenarios congestionados
 
 ---
 

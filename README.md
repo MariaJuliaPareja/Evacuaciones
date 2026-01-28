@@ -12,6 +12,7 @@ Este sistema proporciona una plataforma completa para simular y visualizar evacu
 - Visualizador Separado: No está en el código de compilación
 - Visualización gráfica con matplotlib
 - Comentarios: Código ampliamente documentado
+- **Progressive Path Unlocking**: Sistema de desbloqueo progresivo de rutas
 ## Opciones disponibles:
 Opción 1: Simulación individual con proporción configurable
 Opción 2: Estudio paramétrico (múltiples simulaciones)
@@ -61,11 +62,20 @@ python{
 }
 EstadoAgente incluye:
 
-id, x, y, activo, tipo, conflictos_totales, conflictos_perdidos, ansiedad
+id, x, y, activo, tipo, conflictos_totales, conflictos_perdidos, ansiedad, unlocked_paths_count, all_calculated_paths, current_path, current_path_index, steps_without_moving
 
 EstadisticasPaso incluye:
 
 paso, rapidos_activos, lentos_activos, rapidos_evacuados, lentos_evacuados, conflictos_en_paso, agentes_en_conflicto
+
+## Progressive Path Unlocking System
+
+Agents start with 1 optimal path. As they encounter obstacles:
+- **0-2 steps stuck**: 1 path (low anxiety)
+- **3-4 steps stuck**: 3 paths unlocked (medium anxiety)
+- **5+ steps stuck**: 5 paths unlocked (high anxiety)
+
+The system uses a "calmness threshold" (default: 3) to determine when to unlock additional paths. This progressive unlocking allows agents to explore alternative routes when stuck, improving evacuation efficiency in congested scenarios.
 
 ## Guía para Modificar el Código
 Para cambiar la lógica de movimiento:
@@ -144,7 +154,7 @@ for i, archivo in enumerate(archivos):
     axes[i].plot(pasos, rapidos_evac)
     axes[i].set_title(f'Simulación {i+1}')
     axes[i].set_xlabel('Paso')
-    axes[i].set_ylabel('Vivos evacuados')
+    axes[i].set_ylabel('Rápidos evacuados')
     axes[i].grid(True, alpha=0.3)
 
 plt.tight_layout()

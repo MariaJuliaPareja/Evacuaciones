@@ -1,24 +1,50 @@
-from agent_extendido import AgentExtendido, mover_agentes_con_conflictos
 import pickle
 import sys
+import os
 import random
 
-try:
-    from floor_field import Floor_field
-    FLOOR_FIELD_DISPONIBLE = True
-except:
-    FLOOR_FIELD_DISPONIBLE = False
+# Add parent directories to path for imports
+# This allows importing modules from simulacion/ directory
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
 
+# Import agent_extendido from simulacion directory
 try:
-    import sys
-    import os
-    # Agregar ruta para importar PathSelector
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'nodos'))
-    from path_selector import PathSelector
+    from simulacion.agent_extendido import AgentExtendido, mover_agentes_con_conflictos
+except ImportError:
+    # Fallback: try direct import (if running from parent directory)
+    try:
+        from agent_extendido import AgentExtendido, mover_agentes_con_conflictos
+    except ImportError:
+        raise ImportError("Could not import agent_extendido. Make sure you're running from the project root or simulacion/grilla/ directory.")
+
+# Import floor_field
+try:
+    from simulacion.grilla.floor_field import Floor_field
+    FLOOR_FIELD_DISPONIBLE = True
+except ImportError:
+    try:
+        from floor_field import Floor_field
+        FLOOR_FIELD_DISPONIBLE = True
+    except ImportError:
+        FLOOR_FIELD_DISPONIBLE = False
+
+# Import PathSelector
+try:
+    from simulacion.nodos.path_selector import PathSelector
     PATH_SELECTOR_DISPONIBLE = True
 except ImportError:
-    PATH_SELECTOR_DISPONIBLE = False
-    print("ADVERTENCIA: PathSelector no disponible. Usando comportamiento legacy.")
+    try:
+        # Fallback: try importing from nodes directory
+        nodes_dir = os.path.join(os.path.dirname(__file__), '..', 'nodos')
+        if nodes_dir not in sys.path:
+            sys.path.insert(0, nodes_dir)
+        from path_selector import PathSelector
+        PATH_SELECTOR_DISPONIBLE = True
+    except ImportError:
+        PATH_SELECTOR_DISPONIBLE = False
+        print("ADVERTENCIA: PathSelector no disponible. Usando comportamiento legacy.")
 
 
 # SIMULACIÓN SIMPLE

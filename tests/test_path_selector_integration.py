@@ -141,6 +141,19 @@ def test_seleccion_por_ansiedad():
         optimal_rate = optimal_count / len(optimal_selections)
         # Should prefer optimal (70% probability) but allow others
         assert optimal_rate > 0.5, f"Optimal anxiety should prefer optimal path, got {optimal_rate:.2%}"
+    
+    # Test with num_available_paths parameter (progressive unlocking)
+    if len(k_paths) >= 3:
+        # Test with only 1 path available
+        selected_1 = ps.select_path_by_anxiety(k_paths, anxiety_level=85, num_available_paths=1)
+        assert selected_1 is not None, "Should select a path even with 1 available"
+        assert selected_1 == k_paths[0], "With 1 path available, should select the first (optimal)"
+        
+        # Test with 3 paths available
+        selected_3 = ps.select_path_by_anxiety(k_paths, anxiety_level=85, num_available_paths=3)
+        assert selected_3 is not None, "Should select a path with 3 available"
+        # Should select from first 3 paths
+        assert selected_3 in k_paths[:3], "Should select from first 3 paths"
 
 
 def test_agent_usa_path_selector():
@@ -182,8 +195,11 @@ def test_agent_usa_path_selector():
     assert agent.current_path[0] == (agent.pos_x, agent.pos_y), "Path should start at agent position"
     assert agent.current_path[-1] == goal, f"Path should end at goal {goal}"
     
-    # Verify alternative paths were calculated
-    assert len(agent.alternative_paths) >= 1, f"Should have at least 1 alternative path, got {len(agent.alternative_paths)}"
+    # Verify progressive path unlocking system is working
+    assert hasattr(agent, 'unlocked_paths_count'), "Agent should have unlocked_paths_count"
+    assert hasattr(agent, 'all_calculated_paths'), "Agent should have all_calculated_paths"
+    assert agent.unlocked_paths_count >= 1, f"Should have at least 1 unlocked path, got {agent.unlocked_paths_count}"
+    assert len(agent.all_calculated_paths) >= 1, f"Should have at least 1 calculated path, got {len(agent.all_calculated_paths)}"
     
     # Verify path_index was reset
     assert agent.path_index == 0, "Path index should be reset to 0"
@@ -286,6 +302,159 @@ def test_path_cost_calculation():
     
     # Test that cost is reasonable (should be at least path length)
     assert cost_no_congestion >= len(path) * 0.5, f"Cost should be reasonable, got {cost_no_congestion}"
+
+
+def test_progressive_path_unlocking():
+    """
+    TEST 7: Progressive path unlocking
+    Test that paths unlock progressively as agent gets stuck.
+    """
+    ff = Floor_field(width, height, puertas, obstaculos)
+    ps = PathSelector(ff)
+    
+    # Test initial state (1 path)
+    unlocked = ps.calculate_unlocked_paths(steps_without_moving=0, calmness_threshold=3)
+    assert unlocked == 1, f"Should start with 1 path, got {unlocked}"
+    
+    # Test medium anxiety (3 paths)
+    unlocked = ps.calculate_unlocked_paths(steps_without_moving=3, calmness_threshold=3)
+    assert unlocked == 3, f"Should unlock 3 paths after 3 steps, got {unlocked}"
+    
+    # Test high anxiety (5 paths)
+    unlocked = ps.calculate_unlocked_paths(steps_without_moving=5, calmness_threshold=3)
+    assert unlocked == 5, f"Should unlock 5 paths after 5 steps, got {unlocked}"
+    
+    # Test boundary cases
+    unlocked = ps.calculate_unlocked_paths(steps_without_moving=2, calmness_threshold=3)
+    assert unlocked == 1, f"Should still have 1 path at step 2, got {unlocked}"
+    
+    unlocked = ps.calculate_unlocked_paths(steps_without_moving=4, calmness_threshold=3)
+    assert unlocked == 3, f"Should have 3 paths at step 4, got {unlocked}"
+    
+    unlocked = ps.calculate_unlocked_paths(steps_without_moving=6, calmness_threshold=3)
+    assert unlocked == 5, f"Should have 5 paths at step 6+, got {unlocked}"
+
+
+def test_find_progressive_paths():
+    """
+    TEST 8: Find progressive paths
+    Test finding 1, 3, or 5 alternative paths.
+    """
+    ff = Floor_field(width, height, puertas, obstaculos)
+    ps = PathSelector(ff)
+    
+    start = (10, 10)
+    goal = puertas[0]
+    
+    # Test 1 path
+    paths_1 = ps.find_progressive_paths(start, goal, num_paths=1)
+    assert len(paths_1) == 1, f"Should return exactly 1 path, got {len(paths_1)}"
+    assert paths_1[0] is not None, "Path should not be None"
+    assert len(paths_1[0]) > 0, "Path should not be empty"
+    assert paths_1[0][0] == start, f"Path should start at {start}"
+    assert paths_1[0][-1] == goal, f"Path should end at {goal}"
+    
+    # Test 3 paths
+    paths_3 = ps.find_progressive_paths(start, goal, num_paths=3)
+    assert len(paths_3) >= 2, f"Should return at least 2 different paths, got {len(paths_3)}"
+    assert len(paths_3) <= 3, f"Should return at most 3 paths, got {len(paths_3)}"
+    
+    # Verify all paths are valid
+    for i, path in enumerate(paths_3):
+        assert path is not None, f"Path {i} should not be None"
+        assert len(path) > 0, f"Path {i} should not be empty"
+        assert path[0] == start, f"Path {i} should start at {start}"
+        assert path[-1] == goal, f"Path {i} should end at {goal}"
+    
+    # Test 5 paths
+    paths_5 = ps.find_progressive_paths(start, goal, num_paths=5)
+    assert len(paths_5) >= 3, f"Should return at least 3 different paths, got {len(paths_5)}"
+    assert len(paths_5) <= 5, f"Should return at most 5 paths, got {len(paths_5)}"
+    
+    # Verify all paths are valid
+    for i, path in enumerate(paths_5):
+        assert path is not None, f"Path {i} should not be None"
+        assert len(path) > 0, f"Path {i} should not be empty"
+        assert path[0] == start, f"Path {i} should start at {start}"
+        assert path[-1] == goal, f"Path {i} should end at {goal}"
+    
+    # Validate paths are different (check overlap)
+    if len(paths_5) >= 2:
+        for i, path_a in enumerate(paths_5):
+            for j, path_b in enumerate(paths_5[i+1:], start=i+1):
+                path_a_set = set(path_a)
+                path_b_set = set(path_b)
+                intersection = path_a_set & path_b_set
+                union = path_a_set | path_b_set
+                
+                if len(union) > 0:
+                    overlap = len(intersection) / len(union)
+                    # Allow some overlap but paths should be different
+                    assert overlap < 0.7, f"Paths {i} and {j} too similar ({overlap:.1%} overlap)"
+    
+    # Test invalid num_paths
+    try:
+        ps.find_progressive_paths(start, goal, num_paths=2)
+        assert False, "Should raise ValueError for invalid num_paths"
+    except ValueError:
+        pass  # Expected
+
+
+def test_agent_progressive_unlocking():
+    """
+    TEST 9: Agent progressive unlocking integration
+    Test agent progressively unlocks paths when stuck.
+    """
+    # Clear instances for clean test
+    AgentExtendido.instances = []
+    
+    ff = Floor_field(width, height, puertas, obstaculos)
+    ps = PathSelector(ff)
+    agent = AgentExtendido(
+        agent_type='rapido',
+        floor_field=ff,
+        path_selector=ps,
+        x=10,
+        y=10
+    )
+    agent.calmness_threshold = 3
+    
+    goal = puertas[0]
+    agent_positions = {}
+    
+    # Initial state: 1 path (no steps stuck)
+    agent.steps_without_moving = 0
+    agent.current_path = None  # Force recalculation
+    agent.elegir_ruta(goal, agent_positions)
+    
+    assert agent.unlocked_paths_count == 1, f"Should start with 1 path unlocked, got {agent.unlocked_paths_count}"
+    assert len(agent.all_calculated_paths) >= 1, f"Should have at least 1 calculated path, got {len(agent.all_calculated_paths)}"
+    assert agent.current_path is not None, "Should have a current path"
+    
+    # Simulate getting stuck (3 steps) - should unlock 3 paths
+    agent.steps_without_moving = 3
+    agent.current_path = None  # Force recalculation
+    agent.elegir_ruta(goal, agent_positions)
+    
+    assert agent.unlocked_paths_count == 3, f"Should unlock 3 paths after 3 steps stuck, got {agent.unlocked_paths_count}"
+    assert len(agent.all_calculated_paths) >= 3, f"Should have at least 3 calculated paths, got {len(agent.all_calculated_paths)}"
+    assert agent.current_path is not None, "Should have a current path"
+    
+    # Simulate more stuck time (5+ steps) - should unlock 5 paths
+    agent.steps_without_moving = 5
+    agent.current_path = None
+    agent.elegir_ruta(goal, agent_positions)
+    
+    assert agent.unlocked_paths_count == 5, f"Should unlock 5 paths after 5+ steps stuck, got {agent.unlocked_paths_count}"
+    assert len(agent.all_calculated_paths) >= 3, f"Should have at least 3 different paths, got {len(agent.all_calculated_paths)}"
+    assert agent.current_path is not None, "Should have a current path"
+    
+    # Verify that selected path is from the unlocked paths
+    assert agent.current_path in agent.all_calculated_paths[:agent.unlocked_paths_count], \
+        "Selected path should be from unlocked paths"
+    
+    # Clean up
+    AgentExtendido.instances = []
 
 
 if __name__ == "__main__":

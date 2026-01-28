@@ -10,7 +10,8 @@ import pickle
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from matplotlib.patches import Rectangle, Circle
+from matplotlib.patches import Rectangle, Circle, Patch
+from matplotlib.lines import Line2D
 from matplotlib.widgets import Button, Slider
 from pathlib import Path
 from typing import Dict, List, Tuple, Any
@@ -28,8 +29,28 @@ class EstadoAgente:
     activo: bool
     conflictos_totales: int = 0
     conflictos_perdidos: int = 0
-    ansiedad: int = 0
+    ansiedad: float = 0  # Changed to float for consistency
     current_path: List[Tuple[int, int]] = None  # Ruta planificada A*
+    all_calculated_paths: List[List[Tuple[int, int]]] = None  # Todas las rutas calculadas (hasta 5)
+    unlocked_paths_count: int = 1  # Número de rutas desbloqueadas (1, 3, o 5)
+    current_path_index: int = 0  # Posición actual en la ruta
+    steps_without_moving: int = 0  # Pasos consecutivos sin moverse
+
+
+def _get_stats_field(stats, new_name: str, old_name: str, default=0):
+    """
+    Helper function to get statistics field with backward compatibility.
+    
+    Args:
+        stats: EstadisticasPaso object
+        new_name: New field name (e.g., 'rapidos_activos')
+        old_name: Old field name (e.g., 'vivos_activos')
+        default: Default value if neither exists
+    
+    Returns:
+        Field value
+    """
+    return getattr(stats, new_name, getattr(stats, old_name, default))
 
 
 @dataclass  
@@ -83,8 +104,52 @@ class VisualizadorSimulacion:
     def _cargar_datos(self):
         """Carga y detecta formato automáticamente"""
         try:
+            # Import classes that might be needed for pickle deserialization
+            import sys
+            import os
+            
+            # Add parent directories to path
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            parent_dir = os.path.dirname(current_dir)
+            root_dir = os.path.dirname(parent_dir)
+            
+            for dir_path in [root_dir, parent_dir, current_dir]:
+                if dir_path not in sys.path:
+                    sys.path.insert(0, dir_path)
+            
+            # Import classes that pickle might need (with fallback)
+            try:
+                from simulacion.grilla.simulacion_logger import EstadoAgente as EstadoAgenteLogger, EstadisticasPaso as EstadisticasPasoLogger
+            except ImportError:
+                try:
+                    from simulacion_logger import EstadoAgente as EstadoAgenteLogger, EstadisticasPaso as EstadisticasPasoLogger
+                except ImportError:
+                    pass  # Will use local EstadoAgente if needed
+            
+            # Custom unpickler to handle module path issues
+            class CustomUnpickler(pickle.Unpickler):
+                def find_class(self, module, name):
+                    # Handle simulacion_logger imports
+                    if module == 'simulacion_logger':
+                        try:
+                            from simulacion.grilla.simulacion_logger import EstadoAgente, EstadisticasPaso
+                            if name == 'EstadoAgente':
+                                return EstadoAgente
+                            elif name == 'EstadisticasPaso':
+                                return EstadisticasPaso
+                        except ImportError:
+                            pass
+                    # Fallback to default behavior
+                    return super().find_class(module, name)
+            
             with open(self.archivo_pkl, 'rb') as f:
-                datos_raw = pickle.load(f)
+                try:
+                    unpickler = CustomUnpickler(f)
+                    datos_raw = unpickler.load()
+                except Exception:
+                    # Fallback to standard pickle if custom unpickler fails
+                    f.seek(0)
+                    datos_raw = pickle.load(f)
             
             # Detección de formato
             if isinstance(datos_raw, dict) and 'configuracion' in datos_raw:
@@ -109,10 +174,15 @@ class VisualizadorSimulacion:
             # Mostrar información de evacuados del último paso
             if self.historial_estadisticas:
                 stats_final = self.historial_estadisticas[-1]
-                total_evacuados = stats_final.rapidos_evacuados + stats_final.lentos_evacuados
+                # Handle both old and new field names
+                rapidos_evac = getattr(stats_final, 'rapidos_evacuados', 
+                                      getattr(stats_final, 'vivos_evacuados', 0))
+                lentos_evac = getattr(stats_final, 'lentos_evacuados',
+                                     getattr(stats_final, 'menos_vivos_evacuados', 0))
+                total_evacuados = rapidos_evac + lentos_evac
                 print(f"\nEvacuados en último paso:")
-                print(f"Rapidos: {stats_final.rapidos_evacuados}")
-                print(f"Lentos: {stats_final.lentos_evacuados}")
+                print(f"Rapidos: {rapidos_evac}")
+                print(f"Lentos: {lentos_evac}")
                 print(f"Total: {total_evacuados}")
         
         except FileNotFoundError:
@@ -138,17 +208,29 @@ class VisualizadorSimulacion:
                 if isinstance(agent_estado, EstadoAgente):
                     estados_paso.append(agent_estado)
                 else:
-                    # Convertir desde dataclass o dict
+                    # Convertir desde dataclass o dict con compatibilidad hacia atrás
+                    # Helper function para obtener atributos con valores por defecto
+                    def get_attr_safe(obj, attr, default):
+                        if isinstance(obj, dict):
+                            return obj.get(attr, default)
+                        return getattr(obj, attr, default)
+                    
                     estado = EstadoAgente(
-                        id=getattr(agent_estado, 'id', agent_estado.get('id', 0) if isinstance(agent_estado, dict) else 0),
-                        x=getattr(agent_estado, 'x', agent_estado.get('x', 0) if isinstance(agent_estado, dict) else 0),
-                        y=getattr(agent_estado, 'y', agent_estado.get('y', 0) if isinstance(agent_estado, dict) else 0),
-                        tipo=getattr(agent_estado, 'tipo', agent_estado.get('tipo', 'rapido') if isinstance(agent_estado, dict) else 'rapido'),
-                        activo=getattr(agent_estado, 'activo', agent_estado.get('activo', True) if isinstance(agent_estado, dict) else True),
-                        conflictos_totales=getattr(agent_estado, 'conflictos_totales', agent_estado.get('conflictos_totales', 0) if isinstance(agent_estado, dict) else 0),
-                        conflictos_perdidos=getattr(agent_estado, 'conflictos_perdidos', agent_estado.get('conflictos_perdidos', 0) if isinstance(agent_estado, dict) else 0),
-                        ansiedad=getattr(agent_estado, 'ansiedad', agent_estado.get('ansiedad', 0) if isinstance(agent_estado, dict) else 0),
-                        current_path=getattr(agent_estado, 'current_path', agent_estado.get('current_path', None) if isinstance(agent_estado, dict) else None)
+                        id=get_attr_safe(agent_estado, 'id', 0),
+                        x=get_attr_safe(agent_estado, 'x', 0),
+                        y=get_attr_safe(agent_estado, 'y', 0),
+                        tipo=get_attr_safe(agent_estado, 'tipo', 'rapido'),
+                        activo=get_attr_safe(agent_estado, 'activo', True),
+                        conflictos_totales=get_attr_safe(agent_estado, 'conflictos_totales', 0),
+                        conflictos_perdidos=get_attr_safe(agent_estado, 'conflictos_perdidos', 0),
+                        ansiedad=get_attr_safe(agent_estado, 'ansiedad', 0),
+                        # NEW FIELDS with backward compatibility:
+                        current_path=get_attr_safe(agent_estado, 'current_path', None),
+                        all_calculated_paths=get_attr_safe(agent_estado, 'all_calculated_paths', None),
+                        unlocked_paths_count=get_attr_safe(agent_estado, 'unlocked_paths_count', 1),
+                        current_path_index=get_attr_safe(agent_estado, 'current_path_index', 
+                                                         get_attr_safe(agent_estado, 'path_index', 0)),  # Support both names
+                        steps_without_moving=get_attr_safe(agent_estado, 'steps_without_moving', 0)
                     )
                     estados_paso.append(estado)
             self.historial_agentes.append(estados_paso)
@@ -228,7 +310,22 @@ class VisualizadorSimulacion:
                 if current_path is None:
                     current_path = getattr(agent, 'ruta_planificada', None)
                 
-                # Crear estado
+                # Obtener todas las rutas calculadas y número de rutas desbloqueadas
+                all_calculated_paths = getattr(agent, 'all_calculated_paths', None)
+                unlocked_paths_count = getattr(agent, 'unlocked_paths_count', 1)
+                
+                # Si all_calculated_paths es None pero hay alternative_paths, usar esos
+                if all_calculated_paths is None:
+                    alternative_paths = getattr(agent, 'alternative_paths', None)
+                    if alternative_paths:
+                        all_calculated_paths = alternative_paths
+                
+                # Obtener índice de ruta actual y pasos sin moverse
+                current_path_index = getattr(agent, 'current_path_index', 
+                                            getattr(agent, 'path_index', 0))
+                steps_without_moving = getattr(agent, 'steps_without_moving', 0)
+                
+                # Crear estado con todos los campos nuevos
                 estado = EstadoAgente(
                     id=getattr(agent, 'id', len(estados_paso)),
                     x=pos_x,
@@ -238,7 +335,11 @@ class VisualizadorSimulacion:
                     conflictos_totales=getattr(agent, 'conflictos_totales', 0),
                     conflictos_perdidos=getattr(agent, 'conflictos_perdidos', 0),
                     ansiedad=getattr(agent, 'ansiedad', 0),
-                    current_path=current_path
+                    current_path=current_path,
+                    all_calculated_paths=all_calculated_paths,
+                    unlocked_paths_count=unlocked_paths_count if unlocked_paths_count >= 1 else 1,
+                    current_path_index=current_path_index,
+                    steps_without_moving=steps_without_moving
                 )
                 estados_paso.append(estado)
             
@@ -359,15 +460,53 @@ class VisualizadorSimulacion:
             
             # Dibujar rutas si está habilitado
             if show_paths:
+                # Use new multi-level path visualization
                 for estado in estados:
-                    if estado.activo and estado.current_path is not None:
-                        path = estado.current_path
+                    if not estado.activo:
+                        continue
+                    
+                    # Get all calculated paths for this agent
+                    all_paths = estado.all_calculated_paths if estado.all_calculated_paths else []
+                    unlocked_count = estado.unlocked_paths_count if estado.unlocked_paths_count >= 1 else 1
+                    current_path = estado.current_path
+                    
+                    if not all_paths:
+                        # Fallback: if no all_calculated_paths but has current_path, show that
+                        if current_path:
+                            all_paths = [current_path]
+                            unlocked_count = 1
+                        else:
+                            continue
+                    
+                    # Draw all unlocked paths
+                    for i, path in enumerate(all_paths[:unlocked_count]):
+                        if not path or len(path) == 0:
+                            continue
+                        
+                        # Check if this is the current path
+                        is_current = (path == current_path) or (current_path and len(path) == len(current_path) and 
+                                                               path[0] == current_path[0] and path[-1] == current_path[-1])
+                        
+                        # Visual properties
+                        alpha = 0.7 if is_current else 0.25  # Current path more visible
+                        linewidth = 2.5 if is_current else 1.2
+                        linestyle = '-' if is_current else '--'
+                        
+                        # Color based on path index or anxiety
+                        if is_current:
+                            color = self._get_color_by_anxiety(estado.ansiedad)
+                        else:
+                            color = self._get_path_color(i, unlocked_count)
+                        
+                        # Draw path
                         if len(path) > 1:
-                            anxiety = estado.ansiedad
-                            color = self._get_color_by_anxiety(anxiety)
                             xs, ys = zip(*path)
-                            ax_main.plot(xs, ys, color=color, alpha=0.3, linewidth=1.5,
-                                       linestyle='--', zorder=1)
+                            ax_main.plot(xs, ys, color=color, alpha=alpha, linewidth=linewidth,
+                                       linestyle=linestyle, zorder=1)
+                        else:
+                            # Single point path
+                            ax_main.plot(path[0][0], path[0][1], 'o', color=color, 
+                                       markersize=4, alpha=alpha, zorder=2)
             
             # Dibujar agentes activos
             for estado in estados:
@@ -400,9 +539,13 @@ class VisualizadorSimulacion:
                             weight='bold', zorder=11
                         )
             
-            # Título con info clave
-            total_activos = stats.rapidos_activos + stats.lentos_activos
-            total_evacuados = stats.rapidos_evacuados + stats.lentos_evacuados
+            # Título con info clave (con compatibilidad hacia atrás)
+            rapidos_activos = _get_stats_field(stats, 'rapidos_activos', 'vivos_activos', 0)
+            lentos_activos = _get_stats_field(stats, 'lentos_activos', 'menos_vivos_activos', 0)
+            rapidos_evacuados = _get_stats_field(stats, 'rapidos_evacuados', 'vivos_evacuados', 0)
+            lentos_evacuados = _get_stats_field(stats, 'lentos_evacuados', 'menos_vivos_evacuados', 0)
+            total_activos = rapidos_activos + lentos_activos
+            total_evacuados = rapidos_evacuados + lentos_evacuados
             
             ax_main.set_title(
                 f'Paso: {frame_num}/{max_frames} | '
@@ -422,12 +565,12 @@ class VisualizadorSimulacion:
             
             info_text = f""" PASO {frame_num:3d}/{max_frames:3d}     
                 AGENTES RAPIDOS:
-                Activos: {stats.rapidos_activos}
-                Evacuados: {stats.rapidos_evacuados}
+                Activos: {_get_stats_field(stats, 'rapidos_activos', 'vivos_activos', 0)}
+                Evacuados: {_get_stats_field(stats, 'rapidos_evacuados', 'vivos_evacuados', 0)}
 
                 AGENTES LENTOS:
-                Activos: {stats.lentos_activos}
-                Evacuados: {stats.lentos_evacuados}
+                Activos: {_get_stats_field(stats, 'lentos_activos', 'menos_vivos_activos', 0)}
+                Evacuados: {_get_stats_field(stats, 'lentos_evacuados', 'menos_vivos_evacuados', 0)}
 
                 CONFLICTOS:
                 En este paso: {stats.conflictos_en_paso}
@@ -641,7 +784,9 @@ class VisualizadorSimulacion:
                                ha='center', va='center', fontsize=8,
                                color='white', weight='bold', zorder=11)
             
-            total_activos = stats.rapidos_activos + stats.lentos_activos
+            rapidos_activos = _get_stats_field(stats, 'rapidos_activos', 'vivos_activos', 0)
+            lentos_activos = _get_stats_field(stats, 'lentos_activos', 'menos_vivos_activos', 0)
+            total_activos = rapidos_activos + lentos_activos
             title = f'Paso: {paso} | Activos: {total_activos}'
             if show_paths:
                 title += ' | Rutas A* mostradas'
@@ -822,6 +967,220 @@ class VisualizadorSimulacion:
             plt.close()
         else:
             plt.show()
+    
+    def _dibujar_floor_field(self, ax):
+        """
+        Helper method to draw floor field as background.
+        
+        Args:
+            ax: Matplotlib axis
+        """
+        width = self.configuracion['width']
+        height = self.configuracion['height']
+        puertas = self.configuracion['puertas']
+        obstaculos = self.configuracion['obstaculos']
+        
+        # Configurar ejes
+        ax.set_xlim(-0.5, width - 0.5)
+        ax.set_ylim(-0.5, height - 0.5)
+        ax.set_aspect('equal')
+        ax.invert_yaxis()
+        
+        # Dibujar grilla
+        for i in range(width + 1):
+            ax.axvline(i - 0.5, color='lightgray', linewidth=0.5, alpha=0.3)
+        for j in range(height + 1):
+            ax.axhline(j - 0.5, color='lightgray', linewidth=0.5, alpha=0.3)
+        
+        # Dibujar obstáculos
+        for x, y in obstaculos:
+            rect = Rectangle(
+                (x-0.5, y-0.5), 1, 1,
+                facecolor=self.COLORES['obstaculo'],
+                edgecolor='black', linewidth=1
+            )
+            ax.add_patch(rect)
+        
+        # Dibujar puertas
+        for x, y in puertas:
+            rect = Rectangle(
+                (x-0.5, y-0.5), 1, 1,
+                facecolor=self.COLORES['puerta'],
+                edgecolor='orange', linewidth=2
+            )
+            ax.add_patch(rect)
+            ax.text(x, y, 'P', ha='center', va='center', 
+                   fontsize=12, weight='bold', color='black')
+    
+    def _get_path_color(self, path_index: int, total_unlocked: int) -> str:
+        """
+        Get color for path based on its index.
+        
+        Args:
+            path_index: Index of the path (0 = optimal, 1-4 = alternatives)
+            total_unlocked: Total number of unlocked paths
+        
+        Returns:
+            Color string for matplotlib
+        """
+        colors = {
+            0: 'green',    # Optimal path
+            1: 'yellow',   # Alternative 1
+            2: 'orange',   # Alternative 2
+            3: 'red',      # Alternative 3
+            4: 'purple'    # Alternative 4
+        }
+        return colors.get(path_index, 'gray')
+    
+    def _get_agent_color(self, estado: EstadoAgente) -> str:
+        """
+        Get agent color based on type.
+        
+        Args:
+            estado: EstadoAgente instance
+        
+        Returns:
+            Color string for matplotlib
+        """
+        return 'lightgreen' if estado.tipo == 'rapido' else 'lightcoral'
+    
+    def _add_paths_legend(self, ax):
+        """
+        Add legend explaining path visualization.
+        
+        Args:
+            ax: Matplotlib axis
+        """
+        legend_elements = [
+            Line2D([0], [0], color='green', lw=3, label='Optimal Path (Current)', alpha=0.9),
+            Line2D([0], [0], color='yellow', lw=1.5, linestyle='--', label='Alternative Path', alpha=0.3),
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='lightgreen', 
+                  markersize=10, label='Fast Agent', markeredgecolor='black'),
+            Line2D([0], [0], marker='o', color='w', markerfacecolor='lightcoral', 
+                  markersize=10, label='Slow Agent', markeredgecolor='black'),
+            Patch(facecolor=self.COLORES['puerta'], label='Door'),
+            Patch(facecolor=self.COLORES['obstaculo'], label='Obstacle')
+        ]
+        ax.legend(handles=legend_elements, loc='upper right', fontsize=9)
+    
+    def visualizar_rutas_multinivel(self, paso_idx: int, ax=None, show_legend=True):
+        """
+        Visualize all unlocked paths for each agent at a given step.
+        
+        Shows progressive path unlocking system:
+        - Current path (thick, solid line, color based on anxiety)
+        - Alternative unlocked paths (thin, dashed lines, colors by index)
+        - Agent position with unlocked paths count (e.g., "3P" = 3 paths unlocked)
+        
+        The visualization demonstrates how agents unlock more paths (1→3→5) as they
+        get stuck, providing visual feedback on the progressive unlocking mechanism.
+        
+        Path colors:
+        - Green: Optimal path (index 0)
+        - Yellow: Alternative 1 (index 1)
+        - Orange: Alternative 2 (index 2)
+        - Red: Alternative 3 (index 3)
+        - Purple: Alternative 4 (index 4)
+        
+        Args:
+            paso_idx: Step index to visualize
+            ax: Matplotlib axis (creates new if None)
+            show_legend: Whether to show legend explaining colors and styles
+        
+        Returns:
+            Matplotlib axis
+        
+        Example:
+            >>> viz = VisualizadorSimulacion('datos/simulacion.pkl')
+            >>> viz.visualizar_rutas_multinivel(paso_idx=10)
+        """
+        if paso_idx < 0 or paso_idx >= len(self.historial_agentes):
+            raise ValueError(f"Step index {paso_idx} fuera de rango [0, {len(self.historial_agentes)-1}]")
+        
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(14, 12))
+        
+        # Draw floor field as background
+        self._dibujar_floor_field(ax)
+        
+        # Get agent states at this step
+        estados = self.historial_agentes[paso_idx]
+        
+        for estado in estados:
+            if not estado.activo:
+                continue
+            
+            agent_id = estado.id
+            
+            # Get all calculated paths for this agent
+            all_paths = estado.all_calculated_paths if estado.all_calculated_paths else []
+            unlocked_count = estado.unlocked_paths_count if estado.unlocked_paths_count >= 1 else 1
+            current_path = estado.current_path
+            
+            if not all_paths:
+                # Fallback: if no all_calculated_paths but has current_path, show that
+                if current_path:
+                    all_paths = [current_path]
+                    unlocked_count = 1
+                else:
+                    continue
+            
+            # Draw all unlocked paths with different transparency
+            for i, path in enumerate(all_paths[:unlocked_count]):
+                if not path or len(path) == 0:
+                    continue
+                
+                # Check if this is the current path
+                is_current = (path == current_path) or (current_path and len(path) == len(current_path) and 
+                                                       path[0] == current_path[0] and path[-1] == current_path[-1])
+                
+                # Visual properties
+                alpha = 0.9 if is_current else 0.3  # Current path more visible
+                linewidth = 3 if is_current else 1.5
+                linestyle = '-' if is_current else '--'
+                
+                # Color based on path index
+                color = self._get_path_color(i, unlocked_count)
+                
+                # Draw path
+                if len(path) > 1:
+                    xs, ys = zip(*path)
+                    ax.plot(xs, ys, color=color, alpha=alpha, 
+                           linewidth=linewidth, linestyle=linestyle,
+                           marker='o', markersize=2, zorder=2 if is_current else 1)
+                else:
+                    # Single point path
+                    ax.plot(path[0][0], path[0][1], 'o', color=color, 
+                           markersize=6, alpha=alpha, zorder=3)
+            
+            # Draw agent current position
+            agent_color = self._get_agent_color(estado)
+            ax.plot(estado.x, estado.y, 'o', color=agent_color,
+                   markersize=10, markeredgecolor='black', markeredgewidth=1.5, zorder=10)
+            
+            # Add label showing unlocked paths count
+            ax.text(estado.x + 0.3, estado.y + 0.3, 
+                   f"A{agent_id}\n{unlocked_count}P",
+                   fontsize=8, bbox=dict(boxstyle='round', facecolor='white', alpha=0.7),
+                   zorder=11)
+        
+        # Title
+        stats = self.historial_estadisticas[paso_idx]
+        total_activos = stats.rapidos_activos + stats.lentos_activos
+        ax.set_title(
+            f'Progressive Path Unlocking - Paso {paso_idx}\n'
+            f'Agentes activos: {total_activos}',
+            fontsize=14, weight='bold'
+        )
+        
+        ax.set_xlabel('X Coordinate', fontsize=12)
+        ax.set_ylabel('Y Coordinate', fontsize=12)
+        ax.grid(True, alpha=0.3)
+        
+        if show_legend:
+            self._add_paths_legend(ax)
+        
+        return ax
     
     def grafico_evacuacion_temporal(self, guardar: bool = False,
                                    nombre_archivo: str = 'evacuacion_temporal.png'):

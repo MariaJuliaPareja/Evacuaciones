@@ -36,8 +36,18 @@ class AgentExtendido:
     # Atributos de clase para tracking global
     instances: List['AgentExtendido'] = []
     history: List[Dict] = []
+    ruta_log: List[Dict] = []
     
-    def __init__(self, agent_type: str, floor_field, path_selector, x: int, y: int):
+    def __init__(
+        self,
+        agent_type: str,
+        floor_field,
+        path_selector,
+        x: int,
+        y: int,
+        U_I: int = 10,
+        U_II: int = 20,
+    ):
         """
         Inicializa un agente extendido.
         
@@ -66,12 +76,16 @@ class AgentExtendido:
         
         # SISTEMA DE RUTAS (PathSelector)
         self.current_path = None  # Ruta actual siguiendo
+        self.ruta_actual: list[tuple] = []
         self.path_index = 0  # Índice en la ruta actual
         self.all_calculated_paths = []  # Hasta 5 rutas calculadas
         self.unlocked_paths_count = 1  # Start con 1 ruta desbloqueada
+        self.ruta_idx_seleccionada = -1
         
         # SISTEMA DE ANSIEDAD (Yerkes-Dodson Law)
-        self.ansiedad = random.uniform(20, 90)  # 0-100
+        self.U_I = U_I
+        self.U_II = U_II
+        self.ansiedad = 0  # 0-100
         self.steps_without_moving = 0  # CRÍTICO: controla desbloqueo
         self.calmness_threshold = 3  # Umbral para desbloquear rutas
         
@@ -229,7 +243,8 @@ class AgentExtendido:
         selected_path = self.path_selector.select_path_by_anxiety(
             k_paths=all_paths,
             anxiety_level=self.ansiedad,
-            num_available_paths=unlocked_count
+            num_available_paths=unlocked_count,
+            anxiety_thresholds=(self.U_I, self.U_II),
         )
         
         if selected_path is None or len(selected_path) == 0:
@@ -237,9 +252,15 @@ class AgentExtendido:
         
         # Actualizar ruta
         self.current_path = selected_path
+        self.ruta_actual = list(selected_path)
         self.path_index = 0  # Empezar desde el inicio
         self.all_calculated_paths = all_paths
         self.unlocked_paths_count = unlocked_count
+        available_paths = all_paths[:unlocked_count]
+        self.ruta_idx_seleccionada = next(
+            (idx for idx, path in enumerate(available_paths) if path == selected_path),
+            -1
+        )
         
         # Registrar paso de recalculación para cooldown
         current_step = getattr(self, '_current_simulation_step', 0)
@@ -303,6 +324,17 @@ class AgentExtendido:
             
             # Retornar SIGUIENTE posición en la ruta
             next_pos = self.current_path[self.path_index]
+            current_step = getattr(self, '_current_simulation_step', 0)
+            unlocked_count_log = self.path_selector.calculate_unlocked_paths(
+                steps_without_moving=self.steps_without_moving,
+                calmness_threshold=self.calmness_threshold
+            )
+            AgentExtendido.ruta_log.append({
+                "agent_id": id(self),
+                "step": current_step,
+                "unlocked_count": unlocked_count_log,
+                "ruta_idx": self.ruta_idx_seleccionada,
+            })
             
             # NO incrementar path_index aquí
             # Se incrementa en mover_a() solo si el movimiento fue exitoso
@@ -398,9 +430,8 @@ class AgentExtendido:
                         if self.path_index < len(self.current_path):
                             self.path_index += 1
             
-            # Reducir ansiedad
-            reduction = max(1, int(self.ansiedad * 0.1))
-            self.ansiedad = max(0, self.ansiedad - reduction)
+            # Reducir ansiedad en una unidad por movimiento exitoso
+            self.ansiedad = max(0, self.ansiedad - 1)
             
         else:
             # ❌ NO SE MOVIÓ (quedó en el mismo lugar)
@@ -409,9 +440,8 @@ class AgentExtendido:
             # NO incrementar path_index
             # La ruta sigue siendo válida, simplemente no pudo avanzar este paso
             
-            # Aumentar ansiedad
-            increase = min(5, 1 + (self.steps_without_moving // 2))
-            self.ansiedad = min(100, self.ansiedad + increase)
+            # Aumentar ansiedad en una unidad por bloqueo
+            self.ansiedad = min(100, self.ansiedad + 1)
         
         # Verificar si llegó a puerta (valor = 0)
         if self.floor_field is not None:

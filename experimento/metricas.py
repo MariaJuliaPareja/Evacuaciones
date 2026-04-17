@@ -35,11 +35,9 @@ def _calcular_t(historia_unica: list[dict]) -> int:
     return len(historia_unica)
 
 
-def _valor_stress(agente: Any) -> float | None:
-    """Extrae un valor de stress/ansiedad del agente, si existe."""
-    valor = getattr(agente, "stress", None)
-    if valor is None:
-        valor = getattr(agente, "ansiedad", None)
+def _valor_ansiedad(agente: Any) -> float | None:
+    """Extrae el valor de ansiedad del agente, si existe."""
+    valor = getattr(agente, "ansiedad", None)
     if valor is None:
         return None
     try:
@@ -48,11 +46,11 @@ def _valor_stress(agente: Any) -> float | None:
         return None
 
 
-def _etapa_stress(valor: float) -> str:
-    """Clasifica stress/ansiedad en mild, optimal o anxiety."""
-    if valor < 30:
+def _etapa_ansiedad(valor: float, u_i: float, u_ii: float) -> str:
+    """Clasifica ansiedad en mild, optimal o anxiety usando U_I/U_II."""
+    if valor <= u_i:
         return "mild"
-    if valor < 70:
+    if valor <= u_ii:
         return "optimal"
     return "anxiety"
 
@@ -144,10 +142,17 @@ def calcular_metricas(historia: list[dict]) -> dict | None:
         for frame in historia_unica:
             agentes = frame.get("agentes", [])
             for agente in agentes:
-                valor = _valor_stress(agente)
+                valor = _valor_ansiedad(agente)
                 if valor is None:
                     continue
-                conteo_stress[_etapa_stress(valor)] += 1
+                u_i = getattr(agente, "U_I", 30)
+                u_ii = getattr(agente, "U_II", 70)
+                try:
+                    u_i = float(u_i)
+                    u_ii = float(u_ii)
+                except (TypeError, ValueError):
+                    u_i, u_ii = 30.0, 70.0
+                conteo_stress[_etapa_ansiedad(valor, u_i, u_ii)] += 1
                 agentes_con_stress += 1
 
             colisiones_frame = _sumar_colisiones(frame)

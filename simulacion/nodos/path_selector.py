@@ -50,6 +50,7 @@ class PathSelector:
         
         # Log de decisiones de selección por ansiedad
         self.anxiety_decisions = []  # Lista de decisiones para análisis posterior
+        self.recalculo_log: list[dict] = []
         
         # Configurar logging
         self.logger = logging.getLogger(f'PathSelector_{id(self)}')
@@ -915,7 +916,9 @@ class PathSelector:
                           path_index: int,
                           agent_positions: Dict[Tuple[int, int], int],
                           steps_without_moving: int,
-                          anxiety_level: Optional[float] = None) -> bool:
+                          anxiety_level: Optional[float] = None,
+                          step: int = 0,
+                          agent_id=None) -> bool:
         """
         Determina si el agente debe recalcular su ruta.
         
@@ -945,6 +948,11 @@ class PathSelector:
         if not current_path or path_index >= len(current_path):
             if anxiety_level is not None:
                 self._log_recalculation_by_anxiety(anxiety_level, 'invalid_path')
+            self.recalculo_log.append({
+                "step": step,
+                "agent_id": agent_id,
+                "n_agents_recalculating": None
+            })
             return True
         
         # Condición 2: Estancamiento significativo (umbral más alto para mayor persistencia)
@@ -954,6 +962,11 @@ class PathSelector:
             if anxiety_level is not None:
                 self._log_recalculation_by_anxiety(anxiety_level, 'stagnation')
             self.logger.debug(f"Recalculation triggered: stagnation (steps={steps_without_moving})")
+            self.recalculo_log.append({
+                "step": step,
+                "agent_id": agent_id,
+                "n_agents_recalculating": None
+            })
             return True
         
         # Condición 3: Bloqueo inmediato en la siguiente celda
@@ -964,6 +977,11 @@ class PathSelector:
                 if anxiety_level is not None:
                     self._log_recalculation_by_anxiety(anxiety_level, 'immediate_blockage')
                 self.logger.debug(f"Recalculation triggered: immediate blockage at {next_cell}")
+                self.recalculo_log.append({
+                    "step": step,
+                    "agent_id": agent_id,
+                    "n_agents_recalculating": None
+                })
                 return True
         
         # Condición 4: Cerca del objetivo pero bloqueado
@@ -980,6 +998,11 @@ class PathSelector:
                         if anxiety_level is not None:
                             self._log_recalculation_by_anxiety(anxiety_level, 'near_goal_blocked')
                         self.logger.debug(f"Recalculation triggered: near goal but blocked (distance={distance_to_goal})")
+                        self.recalculo_log.append({
+                            "step": step,
+                            "agent_id": agent_id,
+                            "n_agents_recalculating": None
+                        })
                         return True
                 else:
                     # Ya está en el objetivo o la ruta es inválida
@@ -987,6 +1010,9 @@ class PathSelector:
         
         # Si ninguna condición se cumple, no recalcular
         return False
+
+    def reset_log(self):
+        self.recalculo_log.clear()
     
     def _log_recalculation_by_anxiety(self, anxiety_level: float, reason: str):
         """

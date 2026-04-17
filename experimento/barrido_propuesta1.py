@@ -155,8 +155,9 @@ def _simular_una_historia(
         snapshot = [
             SimpleNamespace(
                 activo=a.activo,
-                stress=getattr(a, "stress", None),
                 ansiedad=getattr(a, "ansiedad", None),
+                U_I=getattr(a, "U_I", None),
+                U_II=getattr(a, "U_II", None),
             )
             for a in AgentExtendido.instances
         ]

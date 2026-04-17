@@ -3,17 +3,15 @@ import sys
 import os
 import random
 
-# Add parent directories to path for imports
-# This allows importing modules from simulacion/ directory
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-# Import agent_extendido from simulacion directory
+# Import agent_extendido 
 try:
     from simulacion.agent_extendido import AgentExtendido, mover_agentes_con_conflictos
 except ImportError:
-    # Fallback: try direct import (if running from parent directory)
+
     try:
         from agent_extendido import AgentExtendido, mover_agentes_con_conflictos
     except ImportError:

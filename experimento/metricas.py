@@ -1,0 +1,171 @@
+"""Utilidades para calcular metricas agregadas de simulaciones."""
+
+from __future__ import annotations
+
+import math
+from typing import Any
+
+
+def _es_frame(obj: Any) -> bool:
+    """Retorna True si el objeto tiene forma de frame del simulador."""
+    return isinstance(obj, dict) and "agentes" in obj
+
+
+def _normalizar_historias(historia: list[dict]) -> list[list[dict]]:
+    """
+    Normaliza la entrada para trabajar siempre como lista de historias.
+
+    Permite dos formatos:
+    - Historia unica: [frame_0, frame_1, ...]
+    - Ensemble: [[frame_0, ...], [frame_0, ...], ...]
+    """
+    if not historia:
+        return []
+    if _es_frame(historia[0]):
+        return [historia]
+    return [h for h in historia if isinstance(h, list)]
+
+
+def _calcular_t(historia_unica: list[dict]) -> int:
+    """Calcula T como el numero de pasos hasta que no queden agentes activos."""
+    for idx, frame in enumerate(historia_unica):
+        agentes = frame.get("agentes", [])
+        if all(not getattr(agente, "activo", False) for agente in agentes):
+            return idx + 1
+    return len(historia_unica)
+
+
+def _valor_stress(agente: Any) -> float | None:
+    """Extrae un valor de stress/ansiedad del agente, si existe."""
+    valor = getattr(agente, "stress", None)
+    if valor is None:
+        valor = getattr(agente, "ansiedad", None)
+    if valor is None:
+        return None
+    try:
+        return float(valor)
+    except (TypeError, ValueError):
+        return None
+
+
+def _etapa_stress(valor: float) -> str:
+    """Clasifica stress/ansiedad en mild, optimal o anxiety."""
+    if valor < 30:
+        return "mild"
+    if valor < 70:
+        return "optimal"
+    return "anxiety"
+
+
+def _sumar_colisiones(frame: dict) -> int | None:
+    """
+    Obtiene colisiones del frame.
+
+    Retorna None cuando no existe informacion de colisiones.
+    """
+    claves = (
+        "n_colisiones",
+        "colisiones",
+        "conflictos_movimiento",
+        "conflictos_totales",
+        "conflictos",
+    )
+    for clave in claves:
+        if clave in frame:
+            try:
+                return int(frame[clave])
+            except (TypeError, ValueError):
+                return 0
+
+    stats = frame.get("stats")
+    if isinstance(stats, dict):
+        for clave in claves:
+            if clave in stats:
+                try:
+                    return int(stats[clave])
+                except (TypeError, ValueError):
+                    return 0
+    return None
+
+
+def _desv_estandar_poblacional(valores: list[int]) -> float:
+    """Calcula desviacion estandar poblacional para una lista numerica."""
+    if not valores:
+        return 0.0
+    media = sum(valores) / len(valores)
+    varianza = sum((v - media) ** 2 for v in valores) / len(valores)
+    return math.sqrt(varianza)
+
+
+def calcular_metricas(historia: list[dict]) -> dict | None:
+    """
+    Calcula metricas agregadas de una simulacion o de un ensemble.
+
+    Parametros
+    ----------
+    historia : list[dict]
+        Puede ser:
+        - Una historia unica: lista de frames.
+        - Un ensemble: lista de historias (cada historia es una lista de frames).
+
+        Cada frame debe incluir la clave ``"agentes"`` con una lista de objetos
+        que idealmente tengan ``.activo`` y opcionalmente ``.stress`` o
+        ``.ansiedad``.
+
+    Retorna
+    -------
+    dict | None
+        Si la historia esta vacia retorna ``None``.
+        En caso contrario retorna un diccionario con:
+        - ``T``: pasos de la primera historia hasta que no queden activos.
+        - ``sigma_T``: desviacion estandar de T entre historias del ensemble.
+        - ``fraccion_stress``: fraccion promedio por etapa
+          (``mild``, ``optimal``, ``anxiety``) a lo largo de todos los frames.
+        - ``n_colisiones``: total de colisiones/conflictos detectados; ``None``
+          si la historia no provee esa metrica.
+    """
+    historias = _normalizar_historias(historia)
+    if not historias:
+        return None
+
+    ts: list[int] = []
+    conteo_stress = {"mild": 0, "optimal": 0, "anxiety": 0}
+    agentes_con_stress = 0
+    total_colisiones = 0
+    hay_colisiones = False
+
+    for historia_unica in historias:
+        if not historia_unica:
+            ts.append(0)
+            continue
+
+        ts.append(_calcular_t(historia_unica))
+
+        for frame in historia_unica:
+            agentes = frame.get("agentes", [])
+            for agente in agentes:
+                valor = _valor_stress(agente)
+                if valor is None:
+                    continue
+                conteo_stress[_etapa_stress(valor)] += 1
+                agentes_con_stress += 1
+
+            colisiones_frame = _sumar_colisiones(frame)
+            if colisiones_frame is not None:
+                hay_colisiones = True
+                total_colisiones += colisiones_frame
+
+    if agentes_con_stress > 0:
+        fraccion_stress = {
+            etapa: conteo / agentes_con_stress
+            for etapa, conteo in conteo_stress.items()
+        }
+    else:
+        fraccion_stress = {"mild": 0.0, "optimal": 0.0, "anxiety": 0.0}
+
+    return {
+        "T": ts[0],
+        "sigma_T": _desv_estandar_poblacional(ts),
+        "fraccion_stress": fraccion_stress,
+        "n_colisiones": total_colisiones if hay_colisiones else None,
+    }

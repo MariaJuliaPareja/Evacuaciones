@@ -14,6 +14,7 @@ Referencias:
 """
 
 import random
+from types import SimpleNamespace
 from typing import Tuple, Optional, Dict, List
 
 
@@ -90,6 +91,41 @@ class AgentExtendido:
         
         # REGISTRO DE CLASE
         AgentExtendido.instances.append(self)
+    
+    @classmethod
+    def stores(cls) -> None:
+        """
+        Añade a `history` una instantánea ligera de todos los agentes (serializable a PKL
+        y compatible con el visualizador).
+        """
+        paso = []
+        for a in cls.instances:
+            cp = getattr(a, 'current_path', None)
+            if cp is not None:
+                cp = list(cp)
+            acp = getattr(a, 'all_calculated_paths', None)
+            if acp is not None:
+                acp = [list(p) if p is not None else None for p in acp]
+            pi = getattr(a, 'path_index', 0)
+            paso.append(
+                SimpleNamespace(
+                    id=a.id,
+                    tipo=a.tipo,
+                    activo=a.activo,
+                    pos_x=a.pos_x,
+                    pos_y=a.pos_y,
+                    conflictos_totales=a.conflictos_totales,
+                    conflictos_perdidos=a.conflictos_perdidos,
+                    ansiedad=a.ansiedad,
+                    current_path=cp,
+                    path_index=pi,
+                    current_path_index=pi,
+                    all_calculated_paths=acp,
+                    unlocked_paths_count=getattr(a, 'unlocked_paths_count', 1),
+                    steps_without_moving=getattr(a, 'steps_without_moving', 0),
+                )
+            )
+        cls.history.append(paso)
     
     def elegir_ruta(self, goal: Tuple[int, int], agent_positions: Optional[Dict[Tuple[int, int], int]] = None):
         """

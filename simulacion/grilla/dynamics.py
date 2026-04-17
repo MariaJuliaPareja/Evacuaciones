@@ -366,6 +366,99 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
     print(f"Visualizar: python visualizador.py {archivo}")
 
 
+def simular_flujos_opuestos(guardar_pkl=True):
+    """
+    Simulación con dos grupos que buscan salidas opuestas (cada uno con su floor field y PathSelector).
+    """
+    if not FLOOR_FIELD_DISPONIBLE or not PATH_SELECTOR_DISPONIBLE:
+        print("\nFloor_field o PathSelector no disponibles; no se puede simular flujos opuestos.")
+        return
+
+    _root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    if _root not in sys.path:
+        sys.path.insert(0, _root)
+    from escenarios import flujos_opuestos as esc
+
+    AgentExtendido.instances = []
+    AgentExtendido.history = []
+
+    ff_A = Floor_field(esc.width, esc.height, esc.puertas_A, esc.obstaculos)
+    ff_B = Floor_field(esc.width, esc.height, esc.puertas_B, esc.obstaculos)
+
+    ps_A = PathSelector(ff_A, umbral_recalculo=0.6, anxiety_thresholds=(30, 70))
+    ps_B = PathSelector(ff_B, umbral_recalculo=0.6, anxiety_thresholds=(30, 70))
+
+    grupo_por_id = {}
+    goals = {}
+
+    for (x, y) in esc.agentes_A:
+        agente = AgentExtendido(
+            agent_type='rapido',
+            floor_field=ff_A,
+            path_selector=ps_A,
+            x=x,
+            y=y,
+        )
+        grupo_por_id[agente.id] = 'A'
+        goals[agente.id] = esc.puertas_A[0]
+
+    for (x, y) in esc.agentes_B:
+        agente = AgentExtendido(
+            agent_type='lento',
+            floor_field=ff_B,
+            path_selector=ps_B,
+            x=x,
+            y=y,
+        )
+        grupo_por_id[agente.id] = 'B'
+        goals[agente.id] = esc.puertas_B[0]
+
+    todos = AgentExtendido.instances
+
+    AgentExtendido.stores()
+
+    paso = 0
+    max_pasos = 300
+
+    while any(a.activo for a in todos) and paso < max_pasos:
+        ps_A.actualizar_metricas(todos)
+        ps_A.actualizar_pesos_grafo()
+        ps_B.actualizar_metricas(todos)
+        ps_B.actualizar_pesos_grafo()
+
+        mover_agentes_con_conflictos(todos, goals=goals)
+        AgentExtendido.stores()
+        paso += 1
+
+    AgentExtendido.history.append({
+        "size_x": esc.width,
+        "size_y": esc.height,
+        "obstacles": esc.obstaculos,
+        "puertas": esc.puertas,
+    })
+
+    if guardar_pkl:
+        datos_dir = os.path.join(_root, 'datos')
+        os.makedirs(datos_dir, exist_ok=True)
+        archivo = os.path.join(datos_dir, 'flujos_opuestos.pkl')
+        with open(archivo, 'wb') as f:
+            pickle.dump(AgentExtendido.history, f)
+        print(f"\nGuardado: {archivo}")
+
+    evac_a = sum(1 for a in todos if grupo_por_id[a.id] == 'A' and not a.activo)
+    evac_b = sum(1 for a in todos if grupo_por_id[a.id] == 'B' and not a.activo)
+    n_a = sum(1 for a in todos if grupo_por_id[a.id] == 'A')
+    n_b = sum(1 for a in todos if grupo_por_id[a.id] == 'B')
+
+    print("\n" + "=" * 60)
+    print("RESUMEN FLUJOS OPUESTOS")
+    print("=" * 60)
+    print(f"Pasos totales: {paso}")
+    print(f"Agentes evacuados grupo A: {evac_a} / {n_a}")
+    print(f"Agentes evacuados grupo B: {evac_b} / {n_b}")
+    print("=" * 60)
+
+
 def menu():
     """Menú interactivo"""
     print("\nOPCIONES:")
@@ -374,9 +467,10 @@ def menu():
     print("  3. Con obstáculos" + ("" if FLOOR_FIELD_DISPONIBLE else "requiere floor_field.py"))
     print("  4. Sala de clases" + ("" if FLOOR_FIELD_DISPONIBLE else "requiere floor_field.py"))
     print("  5. Salir")
+    print("  6. Flujos opuestos (A→O1 / B→O2)" + ("" if (FLOOR_FIELD_DISPONIBLE and PATH_SELECTOR_DISPONIBLE) else " (requiere floor_field + path_selector)"))
     print()
     
-    opcion = input("Elige (1-5): ").strip()
+    opcion = input("Elige (1-6): ").strip()
     
     if opcion == '1':
         simular_simple()
@@ -388,6 +482,8 @@ def menu():
         simular_evacuacion('sala')
     elif opcion == '5':
         print("Saliendo...")
+    elif opcion == '6':
+        simular_flujos_opuestos()
     else:
         print("Opción inválida")
 
@@ -404,8 +500,10 @@ if __name__ == "__main__":
             simular_evacuacion('obstaculos')
         elif cmd == '--sala':
             simular_evacuacion('sala')
+        elif cmd == '--flujos':
+            simular_flujos_opuestos()
         else:
-            print(f"Uso: python dynamics.py [--simple|--evacuacion|--obstaculos|--sala]")
+            print(f"Uso: python dynamics.py [--simple|--evacuacion|--obstaculos|--sala|--flujos]")
     else:
         menu()
 

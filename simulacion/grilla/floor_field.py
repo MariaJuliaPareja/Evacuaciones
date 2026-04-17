@@ -1,5 +1,4 @@
 # floor_field.py clase de Floor Field por Miguel Acevedo y Emilia Partarrieu, 12/25
-import matplotlib.pyplot as plt 
 import numpy as np
 from collections import deque  # para hacer búsqueda tipo BFS
 

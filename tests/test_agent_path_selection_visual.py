@@ -17,10 +17,9 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from escenarios import sala_de_clases
-from simulacion.grilla.floor_field import Floor_field
-from simulacion.nodos.path_selector import PathSelector
-from simulacion.agent_extendido import AgentExtendido
-from simulacion.grilla.visualizador import VisualizadorSimulacion
+from simulacion.grilla_clasica.floor_field import Floor_field
+from simulacion.pathfinding_propuesta.path_selector import PathSelector
+from simulacion.pathfinding_propuesta.agent_extendido import AgentExtendido
 
 
 class TestAgentPathSelection:

@@ -13,7 +13,7 @@ if parent_dir not in sys.path:
 
 # Import agent_extendido 
 try:
-    from simulacion.agent_extendido import AgentExtendido, mover_agentes_con_conflictos
+    from simulacion.pathfinding_propuesta.agent_extendido import AgentExtendido, mover_agentes_con_conflictos
 except ImportError:
 
     try:
@@ -23,7 +23,7 @@ except ImportError:
 
 # Import floor_field
 try:
-    from simulacion.grilla.floor_field import Floor_field
+    from simulacion.grilla_clasica.floor_field import Floor_field
     FLOOR_FIELD_DISPONIBLE = True
 except ImportError:
     try:
@@ -34,7 +34,7 @@ except ImportError:
 
 # Import PathSelector
 try:
-    from simulacion.nodos.path_selector import PathSelector
+    from simulacion.pathfinding_propuesta.path_selector import PathSelector
     PATH_SELECTOR_DISPONIBLE = True
 except ImportError:
     try:

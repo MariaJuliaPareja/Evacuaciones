@@ -11,9 +11,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 import pytest
 from escenarios.escenario_base import width, height, puertas, obstaculos
-from simulacion.grilla.floor_field import Floor_field
-from simulacion.nodos.path_selector import PathSelector
-from simulacion.agent_extendido import AgentExtendido
+from simulacion.grilla_clasica.floor_field import Floor_field
+from simulacion.pathfinding_propuesta.path_selector import PathSelector
+from simulacion.pathfinding_propuesta.agent_extendido import AgentExtendido
 
 
 def test_path_selector_escenario_base():
@@ -254,14 +254,14 @@ def test_blockage_detection():
         )
         assert should_recalc, "Should recalculate with immediate blockage"
     
-    # Test: Stagnation (steps_without_moving >= 3)
+    # Test: Stagnation (steps_without_moving >= 8)
     agent_positions = {}
     should_recalc = ps.should_recalculate(
         agent_pos=start,
         current_path=path,
         path_index=0,
         agent_positions=agent_positions,
-        steps_without_moving=3
+        steps_without_moving=8
     )
     assert should_recalc, "Should recalculate after stagnation"
     

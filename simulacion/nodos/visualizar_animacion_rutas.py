@@ -5,6 +5,7 @@ Muestra el proceso de cálculo y recálculo de rutas paso a paso.
 
 import sys
 import os
+import pickle
 root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, root_dir)
 
@@ -1395,6 +1396,91 @@ def crear_caso_desbloqueo_5_rutas_colisiones():
     return viz
 
 
+def _construir_visualizador_desde_pkl(ruta_pkl: str):
+    """
+    Crea un VisualizadorAnimacionRutas desde un historial PKL (dynamics.py).
+    """
+    with open(ruta_pkl, "rb") as f:
+        historia_raw = pickle.load(f)
+
+    if not isinstance(historia_raw, list) or not historia_raw:
+        raise ValueError(f"Formato de historial inválido: {ruta_pkl}")
+
+    config = historia_raw[-1] if isinstance(historia_raw[-1], dict) else {}
+    frames_raw = [frame for frame in historia_raw if isinstance(frame, list)]
+    if not frames_raw:
+        raise ValueError(f"No se encontraron frames en: {ruta_pkl}")
+
+    # Ajustar escenario global con metadatos del PKL cuando estén disponibles.
+    if config:
+        if "size_x" in config:
+            esc.width = int(config["size_x"])
+        if "size_y" in config:
+            esc.height = int(config["size_y"])
+        if "puertas" in config:
+            esc.puertas = list(config["puertas"])
+        if "obstacles" in config:
+            esc.obstaculos = list(config["obstacles"])
+
+    class _VisualizadorDesdePKL(VisualizadorAnimacionRutas):
+        def __init__(self):
+            self._simular_replaced = True
+            super().__init__(num_agentes=1, max_pasos=1)
+
+    viz = _VisualizadorDesdePKL()
+    viz.ff = Floor_field(esc.width, esc.height, esc.puertas, esc.obstaculos)
+    viz.ps = PathSelector(viz.ff)
+    viz.agentes = []
+    viz.historial = []
+    viz.max_pasos = len(frames_raw)
+    viz.current_step = 0
+    viz.stats_unlock_3 = 0
+    viz.stats_unlock_5 = 0
+    viz.stats_ansiedad_historial = []
+
+    for paso, frame in enumerate(frames_raw):
+        estado_paso = {
+            "paso": paso,
+            "agentes": [],
+            "rutas_calculadas": [],
+            "rutas_recalculadas": [],
+        }
+
+        ansiedades_activas = []
+        for a in frame:
+            ansiedad = float(getattr(a, "ansiedad", 0.0) or 0.0)
+            activo = bool(getattr(a, "activo", True))
+            unlocked = int(getattr(a, "unlocked_paths_count", 1) or 1)
+            estado_agente = {
+                "id": int(getattr(a, "id", -1)),
+                "x": getattr(a, "pos_x", None),
+                "y": getattr(a, "pos_y", None),
+                "tipo": getattr(a, "tipo", "lento"),
+                "ansiedad": ansiedad,
+                "current_path": getattr(a, "current_path", None),
+                "path_index": int(getattr(a, "path_index", 0) or 0),
+                "recalculado": False,
+                "activo": activo,
+                "all_calculated_paths": getattr(a, "all_calculated_paths", None),
+                "unlocked_paths_count": unlocked,
+                "trajectory_history": [],
+            }
+            estado_paso["agentes"].append(estado_agente)
+
+            if unlocked == 3:
+                viz.stats_unlock_3 += 1
+            elif unlocked == 5:
+                viz.stats_unlock_5 += 1
+
+            if activo:
+                ansiedades_activas.append(ansiedad)
+
+        viz.stats_ansiedad_historial.append(float(np.mean(ansiedades_activas)) if ansiedades_activas else 0.0)
+        viz.historial.append(estado_paso)
+
+    return viz
+
+
 def main():
     """Función principal con menú de casos de prueba."""
     import sys
@@ -1420,9 +1506,16 @@ def main():
     print("  3. Desbloqueo de 5 rutas con colisiones")
     print("\n" + "="*60)
     
-    # Si se pasa argumento, usar ese caso
+    # Si se pasa argumento, puede ser un caso (1-3) o un .pkl.
     if len(sys.argv) > 1:
-        caso = sys.argv[1]
+        arg1 = sys.argv[1]
+        if arg1.lower().endswith(".pkl") and os.path.exists(arg1):
+            print(f"\nCargando historial desde PKL: {arg1}")
+            viz = _construir_visualizador_desde_pkl(arg1)
+            print(f"Frames cargados: {len(viz.historial)}")
+            viz.crear_visualizacion_interactiva()
+            return
+        caso = arg1
     else:
         try:
             caso = input("\nSelecciona caso (1-3) o Enter para caso 1: ").strip()

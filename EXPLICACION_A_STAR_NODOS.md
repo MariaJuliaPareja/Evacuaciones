@@ -1,3 +1,152 @@
+# Explicacion A* y Nodos (version ejecutiva)
+
+Documento breve para presentacion tecnica del sistema de evacuaciones.
+
+## 1. Que problema resuelve
+
+El proyecto simula evacuacion en una grilla 2D con:
+
+- agentes heterogeneos (`rapido` / `lento`),
+- obstaculos y puertas de salida,
+- conflictos cuando varios agentes quieren la misma celda.
+
+El objetivo es estudiar tiempo de evacuacion y comportamiento colectivo bajo congestion.
+
+## 2. Arquitectura en una mirada
+
+Capas principales:
+
+- `simulacion/grilla_clasica/floor_field.py`: calcula distancias a salidas.
+- `simulacion/pathfinding_propuesta/path_selector.py`: calcula rutas con A*.
+- `simulacion/pathfinding_propuesta/agent_extendido.py`: decision y movimiento de agentes.
+- `simulacion/grilla/dynamics.py`: orquesta la simulacion paso a paso y exporta resultados.
+
+Entrypoint recomendado:
+
+```bash
+python simulacion/grilla/dynamics.py --sala
+```
+
+## 3. Flujo de datos real
+
+1. `dynamics.py` carga configuracion del escenario (`size`, `puertas`, `obstaculos`, cantidad de agentes).
+2. Se crea `Floor_field` con una matriz de costo/distancia a puertas.
+3. Se crea `PathSelector`:
+   - transforma celdas validas en un grafo,
+   - conecta vecinos (ortogonal y diagonal),
+   - aplica A* para rutas.
+4. Se crean agentes `AgentExtendido` con referencia al `floor_field` y al `path_selector`.
+5. En cada paso de simulacion:
+   - se actualizan metricas dinamicas de congestion,
+   - se ajustan pesos del grafo,
+   - cada agente propone movimiento,
+   - se resuelven conflictos de celda,
+   - se actualiza estado (activo, ansiedad, atasco, ruta actual).
+6. Se guardan resultados:
+   - `historia_<escenario>.pkl`
+   - CSV y PNG en `resultados_reales/`.
+
+## 4. Como funciona A* en este proyecto
+
+### Representacion
+
+- Nodo: celda `(x, y)` valida.
+- Arista: movimiento entre vecinos.
+- Peso base:
+  - `1.0` ortogonal,
+  - `1.5` diagonal.
+
+### Heuristica
+
+Se usa distancia euclidiana para estimar costo restante al objetivo.
+
+### Costo dinamico
+
+No se usa solo distancia geometrica. El peso se ajusta por:
+
+- densidad local,
+- velocidad promedio local,
+- ansiedad local.
+
+Esto permite que la ruta responda a congestion real, no solo a distancia minima.
+
+## 5. Seleccion de rutas y ansiedad
+
+El `PathSelector` no se limita a una ruta:
+
+- calcula alternativas (`k-paths`),
+- penaliza celdas repetidas para promover diversidad,
+- selecciona ruta segun ansiedad del agente.
+
+Comportamiento general:
+
+- ansiedad baja: preferencia por ruta optima,
+- ansiedad media: mezcla entre ruta optima y alternativas,
+- ansiedad alta: mayor variabilidad y exploracion.
+
+## 6. Recalculo de ruta
+
+El sistema recalcula cuando detecta condiciones de bloqueo, por ejemplo:
+
+- ruta invalida,
+- estancamiento por varios pasos,
+- siguiente celda congestionada,
+- bloqueo cerca de la salida.
+
+Esto evita que agentes queden atascados en decisiones antiguas.
+
+## 7. Resolucion de conflictos
+
+Cuando varios agentes proponen la misma celda:
+
+- se aplica criterio de prioridad (distancia a meta y tipo de agente),
+- un agente avanza,
+- los demas quedan en su posicion y aumentan su presion/ansiedad.
+
+Este mecanismo introduce interaccion realista entre trayectorias.
+
+## 8. Que resultados produce
+
+### Salida de demo
+
+En `resultados_reales/`:
+
+- CSV por paso:
+  - agentes activos,
+  - evacuados,
+  - conflictos,
+  - ratio de evacuacion.
+- PNG:
+  - evolucion temporal de activos vs evacuados.
+
+### Salida experimental
+
+En `resultados/`:
+
+- barridos parametricos (`barrido_propuesta1.pkl`, `barrido_herd.pkl`),
+- figuras de analisis (`resultados/figuras/`).
+
+## 9. Mensaje tecnico para defensa
+
+Puntos clave para explicar en reunion:
+
+- El modelo combina una base clasica (`floor field`) con una capa de planificacion (`A*`).
+- La planificacion no es estatica: incorpora congestion y recalculo.
+- La toma de decision es heterogenea (ansiedad), lo que evita comportamiento artificialmente uniforme.
+- El sistema ya entrega trazabilidad reproducible (CSV/PNG/PKL) lista para mostrar.
+
+## 10. Comandos minimos de uso
+
+```bash
+# Simulacion principal para demo
+python simulacion/grilla/dynamics.py --sala
+
+# Escenario de flujos opuestos
+python simulacion/grilla/dynamics.py --flujos
+
+# Tests de integracion de pathfinding
+python -m pytest tests/test_path_selector_integration.py -v
+```
 # 📚 Explicación Completa: Sistema A* y Nodos
 
 ## 📋 Tabla de Contenidos

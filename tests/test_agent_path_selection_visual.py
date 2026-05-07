@@ -174,8 +174,12 @@ class TestAgentPathSelection:
         """Different anxiety levels should select different path probabilities."""
         goal = self.puertas[0]
         start_pos = (8, 5)
-        
-        # Test low anxiety (should always pick optimal)
+
+        # Calcular una sola vez los 3 paths disponibles para comparar ambos niveles
+        k_paths = self.path_selector.find_progressive_paths(start_pos, goal, num_paths=3)
+        assert len(k_paths) >= 3, f"Expected at least 3 paths, got {len(k_paths)}"
+
+        # Test low anxiety (debe favorecer fuertemente el path óptimo)
         selections_low = []
         for _ in range(20):
             agent = AgentExtendido(
@@ -186,27 +190,19 @@ class TestAgentPathSelection:
                 y=start_pos[1]
             )
             agent.ansiedad = 15  # Low anxiety
-            agent.unlocked_paths_count = 3
-            agent.all_calculated_paths = self.path_selector.find_progressive_paths(
-                start_pos, goal, num_paths=3
-            )
-            selected = self.path_selector.select_path_by_anxiety(
-                k_paths=agent.all_calculated_paths,
+            agent.unlocked_paths_count = 3  # Tres rutas disponibles
+            agent.all_calculated_paths = k_paths
+            self.path_selector.select_path_by_anxiety(
+                k_paths=k_paths,
                 anxiety_level=agent.ansiedad,
                 num_available_paths=3
             )
-            # Find index of selected path
-            selected_idx = -1
-            for idx, path in enumerate(agent.all_calculated_paths):
-                if path == selected or (len(path) == len(selected) and 
-                                       path[0] == selected[0] and 
-                                       path[-1] == selected[-1]):
-                    selected_idx = idx
-                    break
+            # Usar índice real registrado por PathSelector (evita ambigüedad por rutas similares)
+            selected_idx = self.path_selector.anxiety_decisions[-1]['selected_path_index']
             if selected_idx >= 0:
                 selections_low.append(selected_idx)
-        
-        # Test high anxiety (should be more distributed)
+
+        # Test high anxiety (debe ser más distribuido hacia rutas subóptimas)
         selections_high = []
         for _ in range(20):
             agent = AgentExtendido(
@@ -217,23 +213,15 @@ class TestAgentPathSelection:
                 y=start_pos[1]
             )
             agent.ansiedad = 85  # High anxiety
-            agent.unlocked_paths_count = 3
-            agent.all_calculated_paths = self.path_selector.find_progressive_paths(
-                start_pos, goal, num_paths=3
-            )
-            selected = self.path_selector.select_path_by_anxiety(
-                k_paths=agent.all_calculated_paths,
+            agent.unlocked_paths_count = 3  # Mismos 3 paths disponibles
+            agent.all_calculated_paths = k_paths
+            self.path_selector.select_path_by_anxiety(
+                k_paths=k_paths,
                 anxiety_level=agent.ansiedad,
                 num_available_paths=3
             )
-            # Find index of selected path
-            selected_idx = -1
-            for idx, path in enumerate(agent.all_calculated_paths):
-                if path == selected or (len(path) == len(selected) and 
-                                       path[0] == selected[0] and 
-                                       path[-1] == selected[-1]):
-                    selected_idx = idx
-                    break
+            # Con ansiedad alta puede haber ruido; el selector guarda el índice original elegido
+            selected_idx = self.path_selector.anxiety_decisions[-1]['selected_path_index']
             if selected_idx >= 0:
                 selections_high.append(selected_idx)
         

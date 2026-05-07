@@ -44,7 +44,7 @@ python simulacion/grilla/dynamics.py --sala
    - se actualiza estado (activo, ansiedad, atasco, ruta actual).
 6. Se guardan resultados:
    - `historia_<escenario>.pkl`
-   - CSV y PNG en `resultados_reales/`.
+   - CSV y PNG en `salidas/demo/`.
 
 ## 4. Como funciona A* en este proyecto
 
@@ -109,7 +109,7 @@ Este mecanismo introduce interaccion realista entre trayectorias.
 
 ### Salida de demo
 
-En `resultados_reales/`:
+En `salidas/demo/`:
 
 - CSV por paso:
   - agentes activos,
@@ -121,10 +121,10 @@ En `resultados_reales/`:
 
 ### Salida experimental
 
-En `resultados/`:
+En `salidas/experimentos/`:
 
 - barridos parametricos (`barrido_propuesta1.pkl`, `barrido_herd.pkl`),
-- figuras de analisis (`resultados/figuras/`).
+- figuras de analisis (`salidas/experimentos/figuras/`).
 
 ## 9. Mensaje tecnico para defensa
 
@@ -147,9 +147,9 @@ python simulacion/grilla/dynamics.py --flujos
 # Tests de integracion de pathfinding
 python -m pytest tests/test_path_selector_integration.py -v
 ```
-# 📚 Explicación Completa: Sistema A* y Nodos
+#  Explicación Completa: Sistema A* y Nodos
 
-## 📋 Tabla de Contenidos
+##  Tabla de Contenidos
 
 1. [Visión General](#visión-general)
 2. [Arquitectura del Sistema](#arquitectura-del-sistema)
@@ -161,7 +161,7 @@ python -m pytest tests/test_path_selector_integration.py -v
 
 ---
 
-## 🎯 Visión General
+## Visión General
 
 El sistema de enrutamiento inteligente convierte una **grilla 2D** (floor field) en un **grafo dirigido** donde cada celda válida es un **nodo** y las conexiones entre celdas adyacentes son **aristas**. Luego usa el algoritmo **A*** para encontrar rutas óptimas entre cualquier par de nodos.
 
@@ -174,7 +174,7 @@ El sistema de enrutamiento inteligente convierte una **grilla 2D** (floor field)
 
 ---
 
-## 🏗️ Arquitectura del Sistema
+##  Arquitectura del Sistema
 
 ```
 ┌─────────────────┐
@@ -203,7 +203,7 @@ El sistema de enrutamiento inteligente convierte una **grilla 2D** (floor field)
 
 ---
 
-## 🔧 Construcción del Grafo de Nodos
+## Construcción del Grafo de Nodos
 
 ### 1. Proceso de Conversión
 
@@ -308,7 +308,7 @@ Grafo = {
 
 ---
 
-## 🔍 Algoritmo A*
+## Algoritmo A*
 
 ### 1. Conceptos Fundamentales
 
@@ -386,7 +386,7 @@ def calculate_heuristic(self, pos1, pos2):
 
 ---
 
-## 📝 Funciones Principales
+## Funciones Principales
 
 ### 1. `_build_graph_from_floor_field()`
 
@@ -595,7 +595,7 @@ peso_final = peso_base × (1 + α×densidad + β×factor_velocidad + γ×ansieda
 
 ---
 
-## 🔄 Flujo de Datos
+##  Flujo de Datos
 
 ### Flujo Completo de una Búsqueda de Ruta:
 
@@ -722,7 +722,7 @@ G = Goal (3,3)
 
 ---
 
-## 🎨 Características Avanzadas
+##  Características Avanzadas
 
 ### 1. Caché de Rutas
 
@@ -817,7 +817,7 @@ Agente atascado 5+ pasos: [Ruta 1] ───────────────
 
 ---
 
-## 🔗 Conexión entre Componentes
+## Conexión entre Componentes
 
 ### Relación Floor Field → Grafo → A*
 
@@ -845,7 +845,7 @@ Ruta: Lista de nodos [(x1,y1), (x2,y2), ...]
 
 ---
 
-## 📈 Métricas y Estadísticas
+##  Métricas y Estadísticas
 
 El sistema rastrea:
 
@@ -866,7 +866,7 @@ Unique paths calculated: 25
 
 ---
 
-## 🎯 Resumen
+## Resumen
 
 1. **Floor Field** → Matriz 2D con distancias a puertas
 2. **Grafo de Nodos** → Cada celda válida es un nodo, conexiones son aristas

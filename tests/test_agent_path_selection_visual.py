@@ -40,7 +40,7 @@ class TestAgentPathSelection:
         self.path_selector = PathSelector(self.floor_field)
         
         # Create output directory
-        self.output_dir = Path("tests/output_visual")
+        self.output_dir = Path("salidas") / "tests"
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # Clear agent instances

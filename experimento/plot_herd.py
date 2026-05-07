@@ -11,8 +11,8 @@ import numpy as np
 import pandas as pd
 
 
-RUTA_INPUT = Path("resultados") / "barrido_herd.pkl"
-RUTA_FIGURAS = Path("resultados") / "figuras"
+RUTA_INPUT = Path("salidas") / "experimentos" / "barrido_herd.pkl"
+RUTA_FIGURAS = Path("salidas") / "experimentos" / "figuras"
 
 
 def _cargar_resultados(path: Path) -> dict[str, Any]:

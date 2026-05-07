@@ -17,7 +17,7 @@ python simulacion/grilla/dynamics.py --sala
 Este comando genera:
 
 - `historia_sala.pkl` (historial serializado)
-- resultados reales en `resultados_reales/`:
+- resultados reales en `salidas/demo/`:
   - un CSV por paso
   - un grafico PNG de evolucion de evacuacion
 
@@ -37,7 +37,8 @@ python simulacion/grilla/dynamics.py --flujos
 - `simulacion/nodos/path_selector.py`: A*, rutas alternativas y recálculo.
 - `escenarios/`: escenarios de simulacion.
 - `experimento/`: barridos y graficos de analisis.
-- `resultados_reales/`: salidas listas para mostrar.
+- `salidas/demo/`: salidas listas para mostrar.
+- `salidas/experimentos/`: salidas de barridos y figuras.
 - `legacy/`: scripts antiguos o fuera del flujo principal.
 
 ## Dependencias

@@ -13,23 +13,8 @@ from typing import Any
 import numpy as np
 
 
-try:
-    from simulacion.floor_field import Floor_field 
-except ImportError:
-    from simulacion.grilla.floor_field import Floor_field  
-
-try:
-    from simulacion.agentes import Agente, mover_agentes 
-except ImportError:
-    Agente = None
-    mover_agentes = None
-
-try:
-    from simulacion.funciones import correr_simulacion  
-except ImportError:
-    from simulacion.grilla.funciones import correr_simulacion  
-
-from simulacion.agent_extendido import AgentExtendido, mover_agentes_con_conflictos
+from simulacion.grilla_clasica.floor_field import Floor_field
+from simulacion.pathfinding_propuesta.agent_extendido import AgentExtendido, mover_agentes_con_conflictos
 from experimento.metricas import calcular_metricas
 
 
@@ -250,7 +235,7 @@ def guardar_resultados(resultados: dict[str, Any], ruta_salida: Path) -> None:
 
 if __name__ == "__main__":
     try:
-        salida = Path("resultados") / "barrido_propuesta1.pkl"
+        salida = Path("salidas") / "experimentos" / "barrido_propuesta1.pkl"
         data = ejecutar_barrido()
         guardar_resultados(data, salida)
         print(f"Barrido finalizado. Archivo guardado en: {salida}")

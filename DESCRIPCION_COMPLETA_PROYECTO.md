@@ -27,7 +27,7 @@ Simular evacuaciones en grilla 2D con agentes heterogéneos y navegación combin
 Al ejecutar `dynamics.py`, se generan:
 
 - archivo PKL de historia (`historia_<escenario>.pkl`),
-- CSV y gráfico en `resultados_reales/`.
+- CSV y gráfico en `salidas/demo/`.
 
 Esto deja una salida inmediata para reporte y presentación.
 
@@ -39,7 +39,9 @@ Esto deja una salida inmediata para reporte y presentación.
 - `simulacion/nodos/path_selector.py`: A*, rutas alternativas, recálculo.
 - `escenarios/`: definición de mapas, obstáculos, puertas y posiciones iniciales.
 - `experimento/`: scripts de análisis y visualización agregada.
-- `resultados_reales/`: salidas finales de corrida.
+- `salidas/demo/`: salidas finales de corrida.
+- `salidas/experimentos/`: resultados de barridos y figuras.
+- `salidas/tests/`: artefactos visuales de validación.
 - `legacy/`: código antiguo o fuera del flujo principal.
 
 ## Notas de mantenimiento

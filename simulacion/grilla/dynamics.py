@@ -50,15 +50,15 @@ except ImportError:
 
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-RESULTADOS_REALES_DIR = os.path.join(PROJECT_ROOT, "resultados_reales")
+SALIDAS_DEMO_DIR = os.path.join(PROJECT_ROOT, "salidas", "demo")
 
 
 def _guardar_resultados_reales(nombre_escenario, total_agentes, activos_por_paso, conflictos_por_paso):
-    os.makedirs(RESULTADOS_REALES_DIR, exist_ok=True)
+    os.makedirs(SALIDAS_DEMO_DIR, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     base_name = f"{nombre_escenario}_{timestamp}"
-    csv_path = os.path.join(RESULTADOS_REALES_DIR, f"{base_name}.csv")
-    png_path = os.path.join(RESULTADOS_REALES_DIR, f"{base_name}.png")
+    csv_path = os.path.join(SALIDAS_DEMO_DIR, f"{base_name}.csv")
+    png_path = os.path.join(SALIDAS_DEMO_DIR, f"{base_name}.png")
 
     with open(csv_path, "w", newline="", encoding="utf-8") as csv_file:
         writer = csv.DictWriter(

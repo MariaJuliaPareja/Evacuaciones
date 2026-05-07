@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-RESULTADOS_PKL = Path("resultados") / "barrido_propuesta1.pkl"
-FIGS_DIR = Path("resultados") / "figuras"
+RESULTADOS_PKL = Path("salidas") / "experimentos" / "barrido_propuesta1.pkl"
+FIGS_DIR = Path("salidas") / "experimentos" / "figuras"
 
 
 def _cargar_resultados(path: Path) -> dict:

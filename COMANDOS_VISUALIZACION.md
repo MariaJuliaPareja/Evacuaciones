@@ -14,8 +14,8 @@ python simulacion/grilla/dynamics.py --sala
 Salida esperada:
 
 - `historia_sala.pkl`
-- `resultados_reales/*.csv`
-- `resultados_reales/*.png`
+- `salidas/demo/*.csv`
+- `salidas/demo/*.png`
 
 ## 2) Visualizador interactivo de rutas
 
@@ -59,6 +59,6 @@ python -m pytest tests/test_agent_path_selection_visual.py -v
 
 ## 7) Archivos generados habituales
 
-- `resultados_reales/` (salidas de demo listas para presentación)
-- `resultados/figuras/` (figuras de barridos experimentales)
-- `tests/output_visual/` (salidas de pruebas visuales)
+- `salidas/demo/` (salidas de demo listas para presentación)
+- `salidas/experimentos/figuras/` (figuras de barridos experimentales)
+- `salidas/tests/` (salidas de pruebas visuales)

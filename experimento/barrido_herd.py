@@ -11,18 +11,11 @@ from typing import Any
 
 import numpy as np
 
-try:
-    from simulacion.floor_field import Floor_field
-except ImportError:
-    from simulacion.grilla.floor_field import Floor_field
+from simulacion.grilla_clasica.floor_field import Floor_field
 
 from experimento.metricas_herd import resumen_herd
-from simulacion.agent_extendido import AgentExtendido, mover_agentes_con_conflictos
-
-try:
-    from simulacion.nodos.path_selector import PathSelector
-except ImportError:
-    from simulacion.path_selector import PathSelector  # type: ignore
+from simulacion.pathfinding_propuesta.agent_extendido import AgentExtendido, mover_agentes_con_conflictos
+from simulacion.pathfinding_propuesta.path_selector import PathSelector
 
 
 RHO_VALS = [0.25, 0.50, 0.75, 1.0]
@@ -288,7 +281,7 @@ def guardar_resultados(resultados: dict[str, Any], ruta_salida: Path) -> None:
 
 if __name__ == "__main__":
     try:
-        salida = Path("resultados") / "barrido_herd.pkl"
+        salida = Path("salidas") / "experimentos" / "barrido_herd.pkl"
         data = ejecutar_barrido_herd()
         guardar_resultados(data, salida)
         print(f"Barrido herd finalizado. Archivo guardado en: {salida}")

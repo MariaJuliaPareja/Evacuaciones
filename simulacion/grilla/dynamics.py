@@ -242,7 +242,7 @@ def simular_simple(num_pasos=10):
 
 # SIMULACIÓN CON FLOOR FIELD
 
-def simular_evacuacion(escenario='basico', usar_path_selector=True):
+def simular_evacuacion(escenario='basico', usar_path_selector=True, nombre_salida=None):
     """
     Simulación con floor_field y movimiento automático.
     Integra PathSelector para navegación inteligente con A* y selección por ansiedad.
@@ -281,19 +281,41 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
                 (9,2),(9,3),(9,6),(9,7)
             ],
             'num_agentes': 16
+        },
+        'base': {
+            'size': (18, 20),
+            'puertas': [(0, 9), (0, 10)],
+            'obstaculos': [],
+            'num_agentes': 4
+        },
+        'avion': {
+            'size': (9, 30),
+            'puertas': [(0, 14), (0, 15), (8, 14), (8, 15)],
+            'obstaculos': [],
+            'num_agentes': 72
         }
     }
     
     config = configs[escenario]
     width, height = config['size']
     
-    # Si el escenario tiene definición explícita de agentes, usarla.
-    # Para 'sala', se lee desde escenarios/sala_de_clases.py.
-    if escenario == 'sala':
+    # Si el escenario tiene definición explícita en /escenarios, usarla.
+    modulos_escenario = {
+        'sala': 'sala_de_clases',
+        'base': 'escenario_base',
+        'avion': 'avion',
+    }
+    if escenario in modulos_escenario:
         try:
-            from escenarios import sala_de_clases as sala_escenario
-            if hasattr(sala_escenario, 'agentes'):
-                config['agentes'] = list(sala_escenario.agentes)
+            modulo = __import__(f"escenarios.{modulos_escenario[escenario]}", fromlist=['*'])
+            if hasattr(modulo, 'width') and hasattr(modulo, 'height'):
+                config['size'] = (int(modulo.width), int(modulo.height))
+            if hasattr(modulo, 'puertas'):
+                config['puertas'] = list(modulo.puertas)
+            if hasattr(modulo, 'obstaculos'):
+                config['obstaculos'] = list(modulo.obstaculos)
+            if hasattr(modulo, 'agentes'):
+                config['agentes'] = list(modulo.agentes)
                 config['num_agentes'] = len(config['agentes'])
         except Exception:
             pass
@@ -524,7 +546,8 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
     })
     
     # Guardar
-    archivo = f"historia_{escenario}.pkl"
+    nombre_base = nombre_salida.strip() if isinstance(nombre_salida, str) and nombre_salida.strip() else escenario
+    archivo = f"historia_{nombre_base}.pkl"
     with open(archivo, 'wb') as f:
         pickle.dump(AgentExtendido.history, f)
     
@@ -542,7 +565,7 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
     print(f"Resultados reales (grafico): {png_path}")
 
 
-def simular_flujos_opuestos(guardar_pkl=True):
+def simular_flujos_opuestos(guardar_pkl=True, nombre_salida="historia_flujos.pkl"):
     """
     Simulación con dos grupos que buscan salidas opuestas (cada uno con su floor field y PathSelector).
     """
@@ -630,9 +653,7 @@ def simular_flujos_opuestos(guardar_pkl=True):
     })
 
     if guardar_pkl:
-        datos_dir = os.path.join(_root, 'datos')
-        os.makedirs(datos_dir, exist_ok=True)
-        archivo = os.path.join(datos_dir, 'flujos_opuestos.pkl')
+        archivo = os.path.join(_root, nombre_salida)
         with open(archivo, 'wb') as f:
             pickle.dump(AgentExtendido.history, f)
         print(f"\nGuardado: {archivo}")
@@ -669,11 +690,13 @@ def menu():
     print("  2. Evacuación básica" + ("" if FLOOR_FIELD_DISPONIBLE else "requiere floor_field.py"))
     print("  3. Con obstáculos" + ("" if FLOOR_FIELD_DISPONIBLE else "requiere floor_field.py"))
     print("  4. Sala de clases" + ("" if FLOOR_FIELD_DISPONIBLE else "requiere floor_field.py"))
-    print("  5. Salir")
-    print("  6. Flujos opuestos (A→O1 / B→O2)" + ("" if (FLOOR_FIELD_DISPONIBLE and PATH_SELECTOR_DISPONIBLE) else " (requiere floor_field + path_selector)"))
+    print("  5. Escenario base")
+    print("  6. Avión")
+    print("  7. Flujos opuestos (A→O1 / B→O2)" + ("" if (FLOOR_FIELD_DISPONIBLE and PATH_SELECTOR_DISPONIBLE) else " (requiere floor_field + path_selector)"))
+    print("  8. Salir")
     print()
     
-    opcion = input("Elige (1-6): ").strip()
+    opcion = input("Elige (1-8): ").strip()
     
     if opcion == '1':
         simular_simple()
@@ -684,9 +707,13 @@ def menu():
     elif opcion == '4':
         simular_evacuacion('sala')
     elif opcion == '5':
-        print("Saliendo...")
+        simular_evacuacion('base')
     elif opcion == '6':
+        simular_evacuacion('avion')
+    elif opcion == '7':
         simular_flujos_opuestos()
+    elif opcion == '8':
+        print("Saliendo...")
     else:
         print("Opción inválida")
 
@@ -694,19 +721,33 @@ def menu():
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        cmd = sys.argv[1]
+        args = sys.argv[1:]
+        cmd = args[0]
+        nombre_salida = None
+        if "--nombre" in args:
+            idx_nombre = args.index("--nombre")
+            if idx_nombre + 1 >= len(args):
+                print("Error: --nombre requiere un valor. Ejemplo: --sala --nombre mi_experimento")
+                sys.exit(1)
+            nombre_salida = args[idx_nombre + 1]
+
         if cmd == '--simple':
             simular_simple()
         elif cmd == '--evacuacion':
-            simular_evacuacion('basico')
+            simular_evacuacion('basico', nombre_salida=nombre_salida)
         elif cmd == '--obstaculos':
-            simular_evacuacion('obstaculos')
+            simular_evacuacion('obstaculos', nombre_salida=nombre_salida)
         elif cmd == '--sala':
-            simular_evacuacion('sala')
+            simular_evacuacion('sala', nombre_salida=nombre_salida)
+        elif cmd == '--base':
+            simular_evacuacion('base', nombre_salida=nombre_salida)
+        elif cmd == '--avion':
+            simular_evacuacion('avion', nombre_salida=nombre_salida)
         elif cmd == '--flujos':
-            simular_flujos_opuestos()
+            nombre_flujos = nombre_salida.strip() if isinstance(nombre_salida, str) and nombre_salida.strip() else "flujos"
+            simular_flujos_opuestos(nombre_salida=f"historia_{nombre_flujos}.pkl")
         else:
-            print(f"Uso: python dynamics.py [--simple|--evacuacion|--obstaculos|--sala|--flujos]")
+            print("Uso: python dynamics.py [--simple|--evacuacion|--obstaculos|--sala|--base|--avion|--flujos] [--nombre <nombre_salida>]")
     else:
         menu()
 

@@ -680,7 +680,10 @@ class VisualizadorAnimacionRutas:
                            marker='o', markersize=2)
             
             # Draw agent current position
-            agent_color = 'lightgreen' if agente_estado['tipo'] == 'rapido' else 'lightcoral'
+            if getattr(self, '_from_pkl', False):
+                agent_color = 'blue' if agente_estado['tipo'] == 'rapido' else 'orange'
+            else:
+                agent_color = 'lightgreen' if agente_estado['tipo'] == 'rapido' else 'lightcoral'
             circle = Circle((x, y), 0.3, color=agent_color, alpha=0.8, zorder=10)
             ax.add_patch(circle)
             
@@ -712,11 +715,18 @@ class VisualizadorAnimacionRutas:
         total_activos = sum(1 for a in estado['agentes'] if a.get('activo', True))
         total_evacuados = len(estado['agentes']) - total_activos
         
-        ax.set_title(
-            f'Evacuation Simulation - Step {step}/{len(self.historial)-1} | '
-            f'Active: {total_activos} | Evacuated: {total_evacuados}',
-            fontsize=13, weight='bold'
-        )
+        if getattr(self, '_from_pkl', False):
+            total_agentes = len(estado['agentes'])
+            ax.set_title(
+                f'Paso {step}/{len(self.historial)} | Evacuados: {total_evacuados}/{total_agentes}',
+                fontsize=13, weight='bold'
+            )
+        else:
+            ax.set_title(
+                f'Evacuation Simulation - Step {step}/{len(self.historial)-1} | '
+                f'Active: {total_activos} | Evacuated: {total_evacuados}',
+                fontsize=13, weight='bold'
+            )
         
         ax.set_xlabel('X', fontsize=12)
         ax.set_ylabel('Y', fontsize=12)
@@ -1428,6 +1438,7 @@ def _construir_visualizador_desde_pkl(ruta_pkl: str):
             super().__init__(num_agentes=1, max_pasos=1)
 
     viz = _VisualizadorDesdePKL()
+    viz._from_pkl = True
     viz.ff = Floor_field(esc.width, esc.height, esc.puertas, esc.obstaculos)
     viz.ps = PathSelector(viz.ff)
     viz.agentes = []
@@ -1506,9 +1517,25 @@ def main():
     print("  3. Desbloqueo de 5 rutas con colisiones")
     print("\n" + "="*60)
     
-    # Si se pasa argumento, puede ser un caso (1-3) o un .pkl.
+    # Si se pasa argumento, puede ser:
+    # - --pkl <archivo.pkl>
+    # - caso numérico (1-3)
+    # - ruta .pkl directa (compatibilidad)
     if len(sys.argv) > 1:
-        arg1 = sys.argv[1]
+        arg1 = sys.argv[1].strip()
+        if arg1 == "--pkl":
+            if len(sys.argv) < 3:
+                print("\nUso: python simulacion/nodos/visualizar_animacion_rutas.py --pkl historia_sala.pkl")
+                return
+            ruta_pkl = sys.argv[2]
+            if not os.path.exists(ruta_pkl):
+                print(f"\nNo existe el archivo PKL: {ruta_pkl}")
+                return
+            print(f"\nCargando historial desde PKL: {ruta_pkl}")
+            viz = _construir_visualizador_desde_pkl(ruta_pkl)
+            print(f"Frames cargados: {len(viz.historial)}")
+            viz.crear_visualizacion_interactiva()
+            return
         if arg1.lower().endswith(".pkl") and os.path.exists(arg1):
             print(f"\nCargando historial desde PKL: {arg1}")
             viz = _construir_visualizador_desde_pkl(arg1)
@@ -1517,12 +1544,33 @@ def main():
             return
         caso = arg1
     else:
+        print("\nEscenarios disponibles:")
+        print("1) Sala de clases    -> historia_sala.pkl")
+        print("2) Avión             -> historia_avion.pkl")
+        print("3) Escenario base    -> historia_base.pkl")
+        print("4) Flujos opuestos   -> historia_flujos.pkl")
         try:
-            caso = input("\nSelecciona caso (1-3) o Enter para caso 1: ").strip()
+            opcion = input("\nElige un escenario (1-4): ").strip()
         except (EOFError, KeyboardInterrupt):
-            caso = "1"
-        if not caso:
-            caso = "1"
+            opcion = "1"
+
+        mapa_pkl = {
+            "1": "historia_sala.pkl",
+            "2": "historia_avion.pkl",
+            "3": "historia_base.pkl",
+            "4": "historia_flujos.pkl",
+        }
+        ruta_pkl = mapa_pkl.get(opcion or "1", "historia_sala.pkl")
+        if not os.path.exists(ruta_pkl):
+            print(f"\nNo existe el archivo PKL: {ruta_pkl}")
+            print("Puedes usar: python simulacion/nodos/visualizar_animacion_rutas.py --pkl <archivo.pkl>")
+            return
+
+        print(f"\nCargando historial desde PKL: {ruta_pkl}")
+        viz = _construir_visualizador_desde_pkl(ruta_pkl)
+        print(f"Frames cargados: {len(viz.historial)}")
+        viz.crear_visualizacion_interactiva()
+        return
     
     casos = {
         "1": crear_caso_desbloqueo_1_ruta,

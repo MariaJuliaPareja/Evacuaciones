@@ -8,16 +8,30 @@ sys.path.insert(0, root_dir)
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
+import importlib
 from simulacion.grilla.floor_field import Floor_field
 from simulacion.nodos.path_selector import PathSelector
-import escenarios.sala_de_clases as esc
 
-def visualizar_grafo_nodos(mostrar_pesos=False):
+def _cargar_escenario(nombre_escenario):
+    """
+    Carga configuración de escenario desde /escenarios.
+    """
+    modulo = importlib.import_module(f"escenarios.{nombre_escenario}")
+    width = int(getattr(modulo, "width"))
+    height = int(getattr(modulo, "height"))
+    puertas = list(getattr(modulo, "puertas"))
+    obstaculos = list(getattr(modulo, "obstaculos", []))
+    return width, height, puertas, obstaculos
+
+
+def visualizar_grafo_nodos(nombre_escenario, mostrar_pesos=False):
     """
     Visualiza el grafo de nodos construido sobre el floor field.
     """
+    width, height, puertas, obstaculos = _cargar_escenario(nombre_escenario)
+
     # Crear floor field
-    ff = Floor_field(esc.width, esc.height, esc.puertas, esc.obstaculos)
+    ff = Floor_field(width, height, puertas, obstaculos)
     
     # Crear path selector (construye grafo)
     ps = PathSelector(ff)
@@ -38,11 +52,11 @@ def visualizar_grafo_nodos(mostrar_pesos=False):
     plt.colorbar(im, ax=ax1, label='Distancia a Puerta')
     
     # Marcar puertas
-    for x, y in esc.puertas:
-        ax1.plot(x, y, 'r*', markersize=15, label='Puerta' if (x, y) == esc.puertas[0] else '')
+    for x, y in puertas:
+        ax1.plot(x, y, 'r*', markersize=15, label='Puerta' if (x, y) == puertas[0] else '')
     
     # Marcar obstáculos
-    for x, y in esc.obstaculos:
+    for x, y in obstaculos:
         ax1.plot(x, y, 'ks', markersize=8)
     
     ax1.legend()
@@ -95,21 +109,26 @@ def visualizar_grafo_nodos(mostrar_pesos=False):
             facecolor='wheat', alpha=0.5))
     
     plt.tight_layout()
-    plt.savefig('grafo_nodos_sobre_grilla.png', dpi=150)
-    print("Visualización guardada: grafo_nodos_sobre_grilla.png")
+    output_dir = os.path.dirname(__file__)
+    output_name = f"grafo_{nombre_escenario}.png"
+    output_path = os.path.join(output_dir, output_name)
+    plt.savefig(output_path, dpi=150)
+    print(f"Visualización guardada: {output_path}")
     plt.show()
 
-def visualizar_ruta_ejemplo():
+def visualizar_ruta_ejemplo(nombre_escenario):
     """
     Muestra una ruta calculada con A* sobre el grafo.
     """
+    width, height, puertas, obstaculos = _cargar_escenario(nombre_escenario)
+
     # Setup
-    ff = Floor_field(esc.width, esc.height, esc.puertas, esc.obstaculos)
+    ff = Floor_field(width, height, puertas, obstaculos)
     ps = PathSelector(ff)
     
     # Elegir origen y destino
     origen = (8, 8)  # Centro de la sala
-    destino = esc.puertas[0]
+    destino = puertas[0]
     
     # Calcular ruta con A*
     ruta = ps.encontrar_ruta_a_star(origen, destino)
@@ -157,13 +176,33 @@ def visualizar_ruta_ejemplo():
     ax.set_ylabel('Y')
     
     plt.tight_layout()
-    plt.savefig('ruta_a_star_ejemplo.png', dpi=150)
-    print(f"Ruta visualizada: ruta_a_star_ejemplo.png")
+    output_dir = os.path.dirname(__file__)
+    output_name = f"ruta_a_star_{nombre_escenario}.png"
+    output_path = os.path.join(output_dir, output_name)
+    plt.savefig(output_path, dpi=150)
+    print(f"Ruta visualizada: {output_path}")
     print(f"Nodos en ruta: {len(ruta)}")
     plt.show()
 
 if __name__ == "__main__":
     print("VISUALIZACIÓN: Sistema de Nodos sobre Grilla")
+    print("\nEscenarios disponibles:")
+    print("1) Sala de clases")
+    print("2) Avión")
+    print("3) Escenario base")
+    print("4) Flujos opuestos")
+    try:
+        opcion = input("\nElige un escenario (1-4): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        opcion = "1"
 
-    visualizar_grafo_nodos()
-    visualizar_ruta_ejemplo()
+    mapa = {
+        "1": "sala_de_clases",
+        "2": "avion",
+        "3": "escenario_base",
+        "4": "flujos_opuestos",
+    }
+    nombre_escenario = mapa.get(opcion or "1", "sala_de_clases")
+
+    visualizar_grafo_nodos(nombre_escenario)
+    visualizar_ruta_ejemplo(nombre_escenario)

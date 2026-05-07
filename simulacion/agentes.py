@@ -106,11 +106,11 @@ class Agente:
         """Aplica el movimiento y desactiva al llegar a una puerta."""
         self.x = x
         self.y = y
-        if self.campo.valores[self.y, self.x] == 0:
+        if self.campo.valores[self.y, self.x] == 0:  # Si llega a una puerta (valor = 0)
             self.activo = False
 
 
-def mover_agentes(agentes):
+def mover_agentes(agentes) -> int:
     """Mueve agentes activos con resolucion simple de conflictos."""
     ocupadas = {(a.x, a.y) for a in agentes if a.activo}
     propuestas = {}
@@ -123,10 +123,13 @@ def mover_agentes(agentes):
     for agente, destino in propuestas.items():
         destinos.setdefault(destino, []).append(agente)
 
+    conflictos = 0
     for destino, candidatos in destinos.items():
         if len(candidatos) == 1:
             candidato = candidatos[0]
             candidato.mover_a(destino[0], destino[1])
         else:
+            conflictos += 1
             ganador = random.choice(candidatos)
             ganador.mover_a(destino[0], destino[1])
+    return conflictos

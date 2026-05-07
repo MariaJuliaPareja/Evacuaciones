@@ -293,144 +293,86 @@ class TestAgentPathSelection:
             print(f"  High anxiety picks optimal: {path_0_ratio_high:.1%}")
     
     def test_simulation_with_progressive_unlocking(self):
-        """Run mini-simulation and track path unlocking progression."""
-        # Create multiple agents
-        agents = [
-            AgentExtendido(
-                agent_type='rapido',
-                floor_field=self.floor_field,
-                path_selector=self.path_selector,
-                x=8, y=2
-            ),
-            AgentExtendido(
-                agent_type='lento',
-                floor_field=self.floor_field,
-                path_selector=self.path_selector,
-                x=10, y=3
-            ),
-            AgentExtendido(
-                agent_type='rapido',
-                floor_field=self.floor_field,
-                path_selector=self.path_selector,
-                x=6, y=4
-            )
-        ]
-        
-        for agent in agents:
-            agent.calmness_threshold = 3
-        
+        """Run controlled mini-simulation forcing PRU activation stages."""
+        agent = AgentExtendido(
+            agent_type='rapido',
+            floor_field=self.floor_field,
+            path_selector=self.path_selector,
+            x=8,
+            y=5
+        )
+        agent.calmness_threshold = 3
         goal = self.puertas[0]
         history = []
-        
-        # Run simulation for 20 steps
+
+        # Forzar stuckness por fases:
+        # pasos 0-2 -> 0, pasos 3-4 -> 3, pasos 5+ -> 6
         for step in range(20):
-            agent_positions = {(ag.pos_x, ag.pos_y): 1 for ag in agents if ag.activo}
-            
-            # Each agent chooses/updates route
-            for agent in agents:
-                if agent.activo:
-                    agent.elegir_ruta(goal, agent_positions)
-            
-            # Move agents
-            propuestas = {}
-            for agent in agents:
-                if agent.activo:
-                    dest = agent.proponer_movimiento()
-                    if dest:
-                        propuestas.setdefault(dest, []).append(agent)
-            
-            # Resolve conflicts and move
-            for dest, lista_agentes in propuestas.items():
-                if len(lista_agentes) == 1:
-                    ag = lista_agentes[0]
-                    ag.pos_x, ag.pos_y = dest
-                    ag.steps_without_moving = 0
-                else:
-                    # Random winner
-                    winner = random.choice(lista_agentes)
-                    winner.pos_x, winner.pos_y = dest
-                    winner.steps_without_moving = 0
-                    # Losers get stuck
-                    for ag in lista_agentes:
-                        if ag != winner:
-                            ag.steps_without_moving += 1
-                            ag.ansiedad = min(100, ag.ansiedad + 5)
-            
-            # Check if reached goal
-            for agent in agents:
-                if agent.activo and (agent.pos_x, agent.pos_y) in self.puertas:
-                    agent.activo = False
-            
-            # Record state
+            if step <= 2:
+                target_stuck = 0
+            elif step <= 4:
+                target_stuck = 3
+            else:
+                target_stuck = 6
+
+            # Actualizar stuck/ansiedad usando la lógica real de AgentExtendido:
+            # mover_a(misma_pos) => if_change=False => stuck +1, ansiedad +1.
+            while agent.steps_without_moving < target_stuck:
+                agent.mover_a(agent.pos_x, agent.pos_y)
+
+            # Recalcular ruta en cada paso para reflejar desbloqueo progresivo.
+            agent._current_simulation_step = step
+            agent.current_path = None
+            agent.elegir_ruta(goal, {(agent.pos_x, agent.pos_y): 1})
+
             history.append({
                 'step': step,
-                'agents': [{
-                    'id': ag.id,
-                    'pos': (ag.pos_x, ag.pos_y),
-                    'activo': ag.activo,
-                    'unlocked': ag.unlocked_paths_count,
-                    'anxiety': ag.ansiedad,
-                    'stuck': ag.steps_without_moving
-                } for ag in agents]
+                'unlocked': agent.unlocked_paths_count,
+                'anxiety': agent.ansiedad,
+                'stuck': agent.steps_without_moving
             })
-        
+
+        steps = [h['step'] for h in history]
+        unlocked = [h['unlocked'] for h in history]
+        anxiety = [h['anxiety'] for h in history]
+        stuck = [h['stuck'] for h in history]
+
         # ASSERTIONS
-        # At least one agent should have unlocked 3+ paths (or at least tried)
-        max_unlocked = max(h['unlocked'] for state in history for h in state['agents'])
-        # Check if any agent got stuck enough to trigger unlocking
-        max_stuck = max(h['stuck'] for state in history for h in state['agents'])
-        # If agents didn't get stuck enough, that's okay - just verify system works
-        if max_stuck >= 3:
-            assert max_unlocked >= 3, \
-                f"At least one agent should unlock 3+ paths when stuck >=3 steps, max was {max_unlocked}"
-        else:
-            # If no agent got stuck enough, verify they at least have 1 path
-            assert max_unlocked >= 1, \
-                f"Agents should have at least 1 path unlocked, max was {max_unlocked}"
-        
-        # VISUAL OUTPUT - Create progression chart
+        assert max(stuck) >= 6, f"Expected stuckness to reach 6, got {max(stuck)}"
+        assert max(anxiety) > 0, f"Anxiety should increase when blocked, got max {max(anxiety)}"
+        assert max(unlocked) >= 5, f"Expected PRU to unlock up to 5 paths, got {max(unlocked)}"
+
+        # VISUAL OUTPUT - Curvas de desbloqueo, ansiedad y stuckness.
         fig, axes = plt.subplots(3, 1, figsize=(14, 10))
-        
-        for agent_idx, agent in enumerate(agents):
-            agent_history = [
-                state['agents'][agent_idx] for state in history
-            ]
-            
-            steps = [state['step'] for state in history]
-            unlocked = [h['unlocked'] for h in agent_history]
-            anxiety = [h['anxiety'] for h in agent_history]
-            stuck = [h['stuck'] for h in agent_history]
-            
-            # Plot unlocked paths
-            axes[0].plot(steps, unlocked, marker='o', label=f"Agent {agent.id} ({agent.tipo})")
-            axes[0].set_ylabel("Unlocked Paths")
-            axes[0].set_title("Progressive Path Unlocking Over Time")
-            axes[0].legend()
-            axes[0].grid(True, alpha=0.3)
-            
-            # Plot anxiety
-            axes[1].plot(steps, anxiety, marker='s', label=f"Agent {agent.id}")
-            axes[1].set_ylabel("Anxiety Level")
-            axes[1].set_title("Anxiety Evolution")
-            axes[1].legend()
-            axes[1].grid(True, alpha=0.3)
-            
-            # Plot steps stuck
-            axes[2].plot(steps, stuck, marker='^', label=f"Agent {agent.id}")
-            axes[2].set_ylabel("Steps Without Moving")
-            axes[2].set_xlabel("Simulation Step")
-            axes[2].set_title("Blockage Detection")
-            axes[2].legend()
-            axes[2].grid(True, alpha=0.3)
-        
+
+        axes[0].plot(steps, unlocked, marker='o', color='tab:blue', label=f"Agent {agent.id} ({agent.tipo})")
+        axes[0].set_ylabel("Unlocked Paths")
+        axes[0].set_title("Progressive Path Unlocking Over Time")
+        axes[0].legend()
+        axes[0].grid(True, alpha=0.3)
+
+        axes[1].plot(steps, anxiety, marker='s', color='tab:red', label=f"Agent {agent.id}")
+        axes[1].set_ylabel("Anxiety Level")
+        axes[1].set_title("Anxiety Evolution (real mover_a logic)")
+        axes[1].legend()
+        axes[1].grid(True, alpha=0.3)
+
+        axes[2].plot(steps, stuck, marker='^', color='tab:green', label=f"Agent {agent.id}")
+        axes[2].set_ylabel("Steps Without Moving")
+        axes[2].set_xlabel("Simulation Step")
+        axes[2].set_title("Forced Blockage Stages")
+        axes[2].legend()
+        axes[2].grid(True, alpha=0.3)
+
         plt.tight_layout()
         plt.savefig(self.output_dir / "test_05_simulation_progression.png",
                     dpi=150, bbox_inches='tight')
         plt.close()
-        
-        print(f"[OK] Simulation completed: {len(history)} steps")
-        print(f"  Max paths unlocked: {max_unlocked}")
-        print(f"  Agents evacuated: {sum(1 for ag in agents if not ag.activo)}/{len(agents)}")
+
+        print(f"[OK] Controlled PRU simulation completed: {len(history)} steps")
+        print(f"  Max paths unlocked: {max(unlocked)}")
+        print(f"  Max anxiety: {max(anxiety)}")
+        print(f"  Max stuckness: {max(stuck)}")
     
     def _visualize_agent_paths(self, agent: AgentExtendido, 
                                title: str, filename: str):

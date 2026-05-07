@@ -556,7 +556,14 @@ def mover_agentes_con_conflictos(agentes: List[AgentExtendido],
         - 'resueltos': número de conflictos resueltos
     """
     if not agentes:
-        return {'movidos': 0, 'conflictos': 0, 'resueltos': 0}
+        return {
+            'movidos': 0,
+            'conflictos': 0,
+            'resueltos': 0,
+            'conflictos_rapido_gana': 0,
+            'conflictos_lento_gana': 0,
+            'conflictos_empate_random': 0,
+        }
     
     # Paso 1: Cada agente propone su movimiento
     propuestas = {}  # {agente_id: (x, y)}
@@ -595,6 +602,9 @@ def mover_agentes_con_conflictos(agentes: List[AgentExtendido],
     movidos = 0
     conflictos_totales = 0
     conflictos_resueltos = 0
+    conflictos_rapido_gana = 0
+    conflictos_lento_gana = 0
+    conflictos_empate_random = 0
     
     # Crear diccionario de agentes por ID para acceso rápido
     agentes_dict = {agente.id: agente for agente in agentes}
@@ -612,35 +622,42 @@ def mover_agentes_con_conflictos(agentes: List[AgentExtendido],
             # CONFLICTO: varios agentes quieren la misma celda
             conflictos_totales += 1
             
-            # Ordenar agentes por prioridad:
-            # 1. El más cercano a la meta (menor valor floor_field) tiene prioridad
-            # 2. Si empate: 'rapido' > 'lento'
-            # 3. Si empate: random
             agentes_conflicto = [agentes_dict[aid] for aid in agentes_ids if aid in agentes_dict]
-            
-            def get_priority(agente):
-                # Prioridad 1: Valor floor_field (menor = más cerca de meta)
+
+            # Resolver prioridad explícitamente para poder telemetría de desempates.
+            # 1) menor floor_field, 2) tipo ('rapido' > 'lento'), 3) random.choice.
+            info_prioridad = []
+            for agente in agentes_conflicto:
                 if agente.floor_field is not None:
                     try:
                         floor_value = agente.floor_field.valores[agente.pos_y, agente.pos_x]
                     except (IndexError, AttributeError):
-                        floor_value = 500  # Valor alto si hay error
+                        floor_value = 500
                 else:
                     floor_value = 500
-                
-                # Prioridad 2: Tipo (rapido > lento)
                 tipo_priority = 0 if agente.tipo == 'rapido' else 1
-                
-                # Prioridad 3: Random (para desempatar)
-                random_priority = random.random()
-                
-                return (floor_value, tipo_priority, random_priority)
-            
-            agentes_conflicto.sort(key=get_priority)
-            
-            # El primero gana, los demás se quedan
-            ganador = agentes_conflicto[0]
-            perdedores = agentes_conflicto[1:]
+                info_prioridad.append((agente, floor_value, tipo_priority))
+
+            min_floor = min(item[1] for item in info_prioridad)
+            candidatos_floor = [item for item in info_prioridad if item[1] == min_floor]
+
+            min_tipo = min(item[2] for item in candidatos_floor)
+            candidatos_tipo = [item for item in candidatos_floor if item[2] == min_tipo]
+
+            if len(candidatos_tipo) > 1:
+                conflictos_empate_random += 1
+                elegido = random.choice(candidatos_tipo)
+            else:
+                elegido = candidatos_tipo[0]
+
+            ganador = elegido[0]
+            perdedores = [a for a in agentes_conflicto if a.id != ganador.id]
+
+            # Clasificación de ganador para telemetría de paper.
+            if ganador.tipo == 'rapido' and any(p.tipo == 'lento' for p in perdedores):
+                conflictos_rapido_gana += 1
+            elif ganador.tipo == 'lento':
+                conflictos_lento_gana += 1
             
             # Mover ganador
             if ganador.activo:
@@ -660,5 +677,8 @@ def mover_agentes_con_conflictos(agentes: List[AgentExtendido],
     return {
         'movidos': movidos,
         'conflictos': conflictos_totales,
-        'resueltos': conflictos_resueltos
+        'resueltos': conflictos_resueltos,
+        'conflictos_rapido_gana': conflictos_rapido_gana,
+        'conflictos_lento_gana': conflictos_lento_gana,
+        'conflictos_empate_random': conflictos_empate_random,
     }

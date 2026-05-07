@@ -53,7 +53,42 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 SALIDAS_DEMO_DIR = os.path.join(PROJECT_ROOT, "salidas", "demo")
 
 
-def _guardar_resultados_reales(nombre_escenario, total_agentes, activos_por_paso, conflictos_por_paso):
+def _normalizar_agente_escenario(agente_raw):
+    """
+    Normaliza definición de agente desde escenario.
+
+    Soporta:
+    - dict: {"pos": (x, y), "tipo": "rapido"|"lento"}
+    - tuple/list: (x, y) con tipo por defecto "lento"
+    """
+    if isinstance(agente_raw, dict):
+        pos = agente_raw.get("pos")
+        tipo = agente_raw.get("tipo", "lento")
+    elif isinstance(agente_raw, (tuple, list)) and len(agente_raw) >= 2:
+        pos = (agente_raw[0], agente_raw[1])
+        tipo = "lento"
+    else:
+        return None
+
+    if not isinstance(pos, (tuple, list)) or len(pos) < 2:
+        return None
+
+    x, y = int(pos[0]), int(pos[1])
+    tipo = str(tipo).strip().lower()
+    if tipo not in ("rapido", "lento"):
+        tipo = "lento"
+    return (x, y), tipo
+
+
+def _guardar_resultados_reales(
+    nombre_escenario,
+    total_agentes,
+    activos_por_paso,
+    conflictos_por_paso,
+    conflictos_rapido_gana_acum=None,
+    conflictos_lento_gana_acum=None,
+    conflictos_empate_random_acum=None,
+):
     os.makedirs(SALIDAS_DEMO_DIR, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     base_name = f"{nombre_escenario}_{timestamp}"
@@ -63,13 +98,31 @@ def _guardar_resultados_reales(nombre_escenario, total_agentes, activos_por_paso
     with open(csv_path, "w", newline="", encoding="utf-8") as csv_file:
         writer = csv.DictWriter(
             csv_file,
-            fieldnames=["paso", "agentes_activos", "agentes_evac", "conflictos", "ratio_evac"],
+            fieldnames=[
+                "paso",
+                "agentes_activos",
+                "agentes_evac",
+                "conflictos",
+                "ratio_evac",
+                "conflictos_rapido_gana",
+                "conflictos_lento_gana",
+                "conflictos_empate_random",
+            ],
         )
         writer.writeheader()
         for paso_idx, activos in enumerate(activos_por_paso):
             evacuados = total_agentes - activos
             ratio = evacuados / total_agentes if total_agentes else 0.0
             conflictos = conflictos_por_paso[paso_idx] if paso_idx < len(conflictos_por_paso) else 0
+            rapidos_ganan = 0
+            lentos_ganan = 0
+            empates_random = 0
+            if conflictos_rapido_gana_acum is not None and paso_idx < len(conflictos_rapido_gana_acum):
+                rapidos_ganan = conflictos_rapido_gana_acum[paso_idx]
+            if conflictos_lento_gana_acum is not None and paso_idx < len(conflictos_lento_gana_acum):
+                lentos_ganan = conflictos_lento_gana_acum[paso_idx]
+            if conflictos_empate_random_acum is not None and paso_idx < len(conflictos_empate_random_acum):
+                empates_random = conflictos_empate_random_acum[paso_idx]
             writer.writerow(
                 {
                     "paso": paso_idx,
@@ -77,6 +130,9 @@ def _guardar_resultados_reales(nombre_escenario, total_agentes, activos_por_paso
                     "agentes_evac": evacuados,
                     "conflictos": conflictos,
                     "ratio_evac": round(ratio, 4),
+                    "conflictos_rapido_gana": rapidos_ganan,
+                    "conflictos_lento_gana": lentos_ganan,
+                    "conflictos_empate_random": empates_random,
                 }
             )
 
@@ -231,6 +287,17 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
     config = configs[escenario]
     width, height = config['size']
     
+    # Si el escenario tiene definición explícita de agentes, usarla.
+    # Para 'sala', se lee desde escenarios/sala_de_clases.py.
+    if escenario == 'sala':
+        try:
+            from escenarios import sala_de_clases as sala_escenario
+            if hasattr(sala_escenario, 'agentes'):
+                config['agentes'] = list(sala_escenario.agentes)
+                config['num_agentes'] = len(config['agentes'])
+        except Exception:
+            pass
+    
     print("\n" + "="*60)
     print(f"SIMULACION: {escenario.upper()}")
     if usar_path_selector and PATH_SELECTOR_DISPONIBLE:
@@ -259,49 +326,85 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
             print("  Continuando con comportamiento legacy")
             path_selector = None
     
-    # Crear agentes (60% rapidos, 40% lentos)
-    num_rapidos = int(config['num_agentes'] * 0.6)
-    
-    # Preparar posiciones iniciales
-    posiciones_iniciales = []
-    tipos_agentes = []
-    posiciones_ocupadas = set()
-    
-    # Generar posiciones aleatorias en mitad derecha
-    for i in range(config['num_agentes']):
-        intentos = 0
-        max_intentos = 100
-        while intentos < max_intentos:
-            x = random.randint(width//2, width-2)
-            y = random.randint(1, height-2)
+    if 'agentes' in config and config['agentes']:
+        agentes_definidos = config['agentes']
+        rapidos = 0
+        creados = 0
+        posiciones_ocupadas = set()
+
+        for idx, agente_raw in enumerate(agentes_definidos):
+            normalizado = _normalizar_agente_escenario(agente_raw)
+            if normalizado is None:
+                print(f"ADVERTENCIA: Definición de agente inválida en índice {idx}: {agente_raw}")
+                continue
+
+            (x, y), tipo = normalizado
             pos = (x, y)
-            
-            # Verificar que no esté en un obstáculo ni ocupado
-            if pos not in config['obstaculos'] and pos not in posiciones_ocupadas:
-                posiciones_ocupadas.add(pos)
-                posiciones_iniciales.append((x, y))
-                # Asignar tipo: primeros num_rapidos son 'rapido', resto 'lento'
-                tipos_agentes.append('rapido' if i < num_rapidos else 'lento')
-                break
-            intentos += 1
+            if pos in config['obstaculos']:
+                print(f"ADVERTENCIA: Agente {idx} en obstáculo {pos}; se omite.")
+                continue
+            if pos in posiciones_ocupadas:
+                print(f"ADVERTENCIA: Posición duplicada {pos}; se omite agente {idx}.")
+                continue
+
+            posiciones_ocupadas.add(pos)
+            AgentExtendido(
+                agent_type=tipo,
+                floor_field=ff,
+                path_selector=path_selector,
+                x=x,
+                y=y
+            )
+            creados += 1
+            if tipo == 'rapido':
+                rapidos += 1
+
+        config['num_agentes'] = creados
+        print(f"{creados} agentes ({rapidos} rapidos) [desde escenario]")
+    else:
+        # Fallback legacy: generar agentes aleatorios con 60/40.
+        num_rapidos = int(config['num_agentes'] * 0.6)
         
-        if intentos >= max_intentos:
-            print(f"ADVERTENCIA: No se pudo asignar posición única al agente {i}")
-            # Usar posición por defecto si falla
-            posiciones_iniciales.append((width-1, height-1))
-            tipos_agentes.append('rapido' if i < num_rapidos else 'lento')
-    
-    # Crear agentes con PathSelector
-    for (x, y), tipo in zip(posiciones_iniciales, tipos_agentes):
-        AgentExtendido(
-            agent_type=tipo,
-            floor_field=ff,
-            path_selector=path_selector,
-            x=x,
-            y=y
-        )
-    
-    print(f"{config['num_agentes']} agentes ({num_rapidos} rapidos)")
+        # Preparar posiciones iniciales
+        posiciones_iniciales = []
+        tipos_agentes = []
+        posiciones_ocupadas = set()
+        
+        # Generar posiciones aleatorias en mitad derecha
+        for i in range(config['num_agentes']):
+            intentos = 0
+            max_intentos = 100
+            while intentos < max_intentos:
+                x = random.randint(width//2, width-2)
+                y = random.randint(1, height-2)
+                pos = (x, y)
+                
+                # Verificar que no esté en un obstáculo ni ocupado
+                if pos not in config['obstaculos'] and pos not in posiciones_ocupadas:
+                    posiciones_ocupadas.add(pos)
+                    posiciones_iniciales.append((x, y))
+                    # Asignar tipo: primeros num_rapidos son 'rapido', resto 'lento'
+                    tipos_agentes.append('rapido' if i < num_rapidos else 'lento')
+                    break
+                intentos += 1
+            
+            if intentos >= max_intentos:
+                print(f"ADVERTENCIA: No se pudo asignar posición única al agente {i}")
+                # Usar posición por defecto si falla
+                posiciones_iniciales.append((width-1, height-1))
+                tipos_agentes.append('rapido' if i < num_rapidos else 'lento')
+        
+        # Crear agentes con PathSelector
+        for (x, y), tipo in zip(posiciones_iniciales, tipos_agentes):
+            AgentExtendido(
+                agent_type=tipo,
+                floor_field=ff,
+                path_selector=path_selector,
+                x=x,
+                y=y
+            )
+        
+        print(f"{config['num_agentes']} agentes ({num_rapidos} rapidos)")
     
     # Verificar que todos los agentes tienen posiciones válidas
     for i, agent in enumerate(AgentExtendido.instances):
@@ -318,6 +421,9 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
     }
     activos_por_paso = [sum(1 for a in AgentExtendido.instances if a.activo)]
     conflictos_por_paso = [0]
+    conflictos_rapido_gana_acum = [0]
+    conflictos_lento_gana_acum = [0]
+    conflictos_empate_random_acum = [0]
     
     # Simular hasta evacuar todos
     paso = 0
@@ -341,6 +447,15 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
         # Mover agentes (mover_agentes_con_conflictos ya maneja goal y agent_positions internamente)
         stats = mover_agentes_con_conflictos(AgentExtendido.instances)
         conflictos_por_paso.append(stats.get("conflictos", 0))
+        conflictos_rapido_gana_acum.append(
+            conflictos_rapido_gana_acum[-1] + stats.get("conflictos_rapido_gana", 0)
+        )
+        conflictos_lento_gana_acum.append(
+            conflictos_lento_gana_acum[-1] + stats.get("conflictos_lento_gana", 0)
+        )
+        conflictos_empate_random_acum.append(
+            conflictos_empate_random_acum[-1] + stats.get("conflictos_empate_random", 0)
+        )
         
         # Registrar estadísticas de PathSelector
         if path_selector is not None:
@@ -418,6 +533,9 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
         total_agentes=config["num_agentes"],
         activos_por_paso=activos_por_paso,
         conflictos_por_paso=conflictos_por_paso,
+        conflictos_rapido_gana_acum=conflictos_rapido_gana_acum,
+        conflictos_lento_gana_acum=conflictos_lento_gana_acum,
+        conflictos_empate_random_acum=conflictos_empate_random_acum,
     )
     print(f"\nArchivo PKL: {archivo}")
     print(f"Resultados reales (CSV): {csv_path}")
@@ -480,6 +598,9 @@ def simular_flujos_opuestos(guardar_pkl=True):
 
     activos_por_paso = [sum(1 for a in todos if a.activo)]
     conflictos_por_paso = [0]
+    conflictos_rapido_gana_acum = [0]
+    conflictos_lento_gana_acum = [0]
+    conflictos_empate_random_acum = [0]
     while any(a.activo for a in todos) and paso < max_pasos:
         ps_A.actualizar_metricas(todos)
         ps_A.actualizar_pesos_grafo()
@@ -488,6 +609,15 @@ def simular_flujos_opuestos(guardar_pkl=True):
 
         stats = mover_agentes_con_conflictos(todos, goals=goals)
         conflictos_por_paso.append(stats.get("conflictos", 0))
+        conflictos_rapido_gana_acum.append(
+            conflictos_rapido_gana_acum[-1] + stats.get("conflictos_rapido_gana", 0)
+        )
+        conflictos_lento_gana_acum.append(
+            conflictos_lento_gana_acum[-1] + stats.get("conflictos_lento_gana", 0)
+        )
+        conflictos_empate_random_acum.append(
+            conflictos_empate_random_acum[-1] + stats.get("conflictos_empate_random", 0)
+        )
         AgentExtendido.stores()
         paso += 1
         activos_por_paso.append(sum(1 for a in todos if a.activo))
@@ -524,6 +654,9 @@ def simular_flujos_opuestos(guardar_pkl=True):
         total_agentes=len(todos),
         activos_por_paso=activos_por_paso,
         conflictos_por_paso=conflictos_por_paso,
+        conflictos_rapido_gana_acum=conflictos_rapido_gana_acum,
+        conflictos_lento_gana_acum=conflictos_lento_gana_acum,
+        conflictos_empate_random_acum=conflictos_empate_random_acum,
     )
     print(f"Resultados reales (CSV): {csv_path}")
     print(f"Resultados reales (grafico): {png_path}")

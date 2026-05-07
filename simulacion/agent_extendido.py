@@ -86,14 +86,14 @@ class AgentExtendido:
         self.U_I = U_I
         self.U_II = U_II
         self.ansiedad = 0  # 0-100
-        self.steps_without_moving = 0  # CRÍTICO: controla desbloqueo
+        self.steps_without_moving = 0
         self.calmness_threshold = 3  # Umbral para desbloquear rutas
         
         # TRACKING
         self.conflictos_totales = 0
         self.conflictos_perdidos = 0
         
-        # COOLDOWN DE RECALCULACIÓN (inercia cognitiva)
+        # Cooldown entre recálculos de ruta.
         self.last_recalculation_step = -1  # Paso de la última recalculación
         self.recalculation_cooldown = 4  # Pasos mínimos entre recalculaciones
         
@@ -163,13 +163,10 @@ class AgentExtendido:
         if agent_positions is None:
             agent_positions = {}
         
-        # IMPORTANTE: Reset flag al inicio de cada paso
         self.recalculated_this_step = False
         
         pos_actual = (self.pos_x, self.pos_y)
         
-        # COOLDOWN: Verificar si pasó suficiente tiempo desde la última recalculación
-        # (inercia cognitiva: no cambiar estrategia instantáneamente)
         current_step = getattr(self, '_current_simulation_step', 0)
         steps_since_recalc = current_step - self.last_recalculation_step
         
@@ -201,10 +198,8 @@ class AgentExtendido:
         # SI LLEGA AQUÍ, SÍ VA A RECALCULAR
         # ========================================
         
-        # NUEVO: Marcar que recalculó en este paso
         self.recalculated_this_step = True
         
-        # IMPORTANTE: Limpiar rutas antiguas antes de recalcular
         self.all_calculated_paths = []
         self.current_path = None
         
@@ -224,7 +219,6 @@ class AgentExtendido:
                 num_paths=5
             )
         except (ValueError, Exception) as e:
-            # Fallback: intentar con find_k_paths
             try:
                 all_paths = self.path_selector.find_k_paths(
                     start=pos_actual,
@@ -387,7 +381,6 @@ class AgentExtendido:
         self.pos_y = nueva_y
         
         if self.if_change:
-            # ✅ SE MOVIÓ EXITOSAMENTE
             self.steps_without_moving = 0
             
             # Guardar en historial de trayectoria
@@ -402,7 +395,6 @@ class AgentExtendido:
                     expected_pos = self.current_path[self.path_index]
                 
                 if expected_pos and new_pos == expected_pos:
-                    # ✅ Movimiento correcto según la ruta
                     self.path_index += 1
                 else:
                     # ⚠ Se desvió de la ruta planificada
@@ -434,7 +426,6 @@ class AgentExtendido:
             self.ansiedad = max(0, self.ansiedad - 1)
             
         else:
-            # ❌ NO SE MOVIÓ (quedó en el mismo lugar)
             self.steps_without_moving += 1
             
             # NO incrementar path_index

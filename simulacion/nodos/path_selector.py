@@ -1,4 +1,3 @@
-#  Sistema de enrutamiento inteligente con A*
 import numpy as np
 import networkx as nx
 from typing import List, Tuple, Optional, Dict
@@ -9,14 +8,7 @@ import random
 import logging
 
 class PathSelector:
-    """
-    Sistema de enrutamiento dinámico que:
-    1. Convierte floor_field en grafo de nodos
-    2. Usa A* con métricas dinámicas (congestión, velocidad, ansiedad)
-    3. Recalcula rutas cuando detecta congestión adelante
-    
-    Preparado para evolucionar a D* Lite y Social Force Model en futuro.
-    """
+    """Selector de rutas con A*, cache y pesos dinámicos."""
     
     def __init__(self, floor_field, umbral_recalculo=0.6, anxiety_thresholds: Tuple[int, int] = (30, 70)):
         """
@@ -52,14 +44,10 @@ class PathSelector:
         self.anxiety_decisions = []  # Lista de decisiones para análisis posterior
         self.recalculo_log: list[dict] = []
         
-        # Configurar logging
         self.logger = logging.getLogger(f'PathSelector_{id(self)}')
         if not self.logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            handler.setFormatter(formatter)
-            self.logger.addHandler(handler)
-            self.logger.setLevel(logging.INFO)
+            self.logger.addHandler(logging.NullHandler())
+            self.logger.setLevel(logging.WARNING)
         
         # Métricas dinámicas
         self.densidad_local = {}  # (x,y) -> densidad [0-1]
@@ -111,8 +99,6 @@ class PathSelector:
             (-1, -1, 1.5)   # SO
         ]
         
-        print(f"Construyendo grafo de nodos para grid {self.floor_field.width}x{self.floor_field.height}...")
-        
         nodos_agregados = 0
         aristas_agregadas = 0
         
@@ -144,7 +130,6 @@ class PathSelector:
                                           weight=costo_base)
                                 aristas_agregadas += 1
         
-        print(f"Grafo creado: {nodos_agregados} nodos, {aristas_agregadas} aristas")
         return G
     
     def _construir_grafo_nodos(self) -> nx.DiGraph:
@@ -620,9 +605,6 @@ class PathSelector:
                 # Si aún no encontramos una ruta diferente después de ambos intentos, salir
                 if not found_path:
                     break
-        
-        # Log del número de rutas encontradas
-        print(f"find_k_paths: Encontradas {len(paths_found)}/{k} rutas desde {start} hasta {goal}")
         
         return paths_found
     

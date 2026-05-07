@@ -24,7 +24,7 @@ def _cargar_resultados(path: Path) -> dict:
 def _extraer_grillas(data: dict) -> tuple[np.ndarray, np.ndarray, dict[str, np.ndarray], int]:
     """
     Construye matrices (rho x log10(1/d)) para T, sigma_T y fracciones de stress.
-    """
+    """º
     meta = data.get("meta", {})
     entries = data.get("resultados", [])
     if not entries:

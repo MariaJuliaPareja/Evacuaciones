@@ -1,4 +1,4 @@
-# demo_path_selector.py 
+# demo_path_selector.py
 """
 Demo del sistema de enrutamiento inteligente con A*.
 Muestra:

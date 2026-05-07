@@ -102,13 +102,6 @@ def calcular_metricas(historia: list[dict]) -> dict | None:
     Parametros
     ----------
     historia : list[dict]
-        Puede ser:
-        - Una historia unica: lista de frames.
-        - Un ensemble: lista de historias (cada historia es una lista de frames).
-
-        Cada frame debe incluir la clave ``"agentes"`` con una lista de objetos
-        que idealmente tengan ``.activo`` y opcionalmente ``.stress`` o
-        ``.ansiedad``.
 
     Retorna
     -------

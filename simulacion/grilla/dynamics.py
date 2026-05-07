@@ -2,6 +2,10 @@ import pickle
 import sys
 import os
 import random
+import csv
+from datetime import datetime
+
+import matplotlib.pyplot as plt
 
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
@@ -45,7 +49,52 @@ except ImportError:
         print("ADVERTENCIA: PathSelector no disponible. Usando comportamiento legacy.")
 
 
-# SIMULACIÓN SIMPLE
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+RESULTADOS_REALES_DIR = os.path.join(PROJECT_ROOT, "resultados_reales")
+
+
+def _guardar_resultados_reales(nombre_escenario, total_agentes, activos_por_paso, conflictos_por_paso):
+    os.makedirs(RESULTADOS_REALES_DIR, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_name = f"{nombre_escenario}_{timestamp}"
+    csv_path = os.path.join(RESULTADOS_REALES_DIR, f"{base_name}.csv")
+    png_path = os.path.join(RESULTADOS_REALES_DIR, f"{base_name}.png")
+
+    with open(csv_path, "w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(
+            csv_file,
+            fieldnames=["paso", "agentes_activos", "agentes_evac", "conflictos", "ratio_evac"],
+        )
+        writer.writeheader()
+        for paso_idx, activos in enumerate(activos_por_paso):
+            evacuados = total_agentes - activos
+            ratio = evacuados / total_agentes if total_agentes else 0.0
+            conflictos = conflictos_por_paso[paso_idx] if paso_idx < len(conflictos_por_paso) else 0
+            writer.writerow(
+                {
+                    "paso": paso_idx,
+                    "agentes_activos": activos,
+                    "agentes_evac": evacuados,
+                    "conflictos": conflictos,
+                    "ratio_evac": round(ratio, 4),
+                }
+            )
+
+    pasos = list(range(len(activos_por_paso)))
+    evacuados = [total_agentes - a for a in activos_por_paso]
+    plt.figure(figsize=(8, 4.5))
+    plt.plot(pasos, evacuados, label="Agentes evacuados", linewidth=2.0)
+    plt.plot(pasos, activos_por_paso, label="Agentes activos", linewidth=1.8, alpha=0.85)
+    plt.xlabel("Paso")
+    plt.ylabel("Cantidad de agentes")
+    plt.title(f"Evolucion de evacuacion - {nombre_escenario}")
+    plt.grid(alpha=0.25)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(png_path, dpi=180)
+    plt.close()
+
+    return csv_path, png_path
 
 def simular_simple(num_pasos=10):
     """
@@ -183,7 +232,7 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
     width, height = config['size']
     
     print("\n" + "="*60)
-    print(f"SIMULACIÓN: {escenario.upper()}")
+    print(f"SIMULACION: {escenario.upper()}")
     if usar_path_selector and PATH_SELECTOR_DISPONIBLE:
         print("  Usando PathSelector (A* + selección por ansiedad)")
     else:
@@ -204,7 +253,7 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
     if usar_path_selector and PATH_SELECTOR_DISPONIBLE:
         try:
             path_selector = PathSelector(ff, umbral_recalculo=0.6, anxiety_thresholds=(30, 70))
-            print("PathSelector creado exitosamente")
+            print("PathSelector inicializado")
         except Exception as e:
             print(f"ADVERTENCIA: Error al crear PathSelector: {e}")
             print("  Continuando con comportamiento legacy")
@@ -261,12 +310,14 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
     
     AgentExtendido.stores()
     
-    # Estadísticas para logging
+    # Estadísticas principales
     recalculation_stats = {
         'total_recalculations': 0,
         'by_anxiety_level': {'baja': 0, 'media': 0, 'alta': 0},
         'path_lengths': []
     }
+    activos_por_paso = []
+    conflictos_por_paso = []
     
     # Simular hasta evacuar todos
     paso = 0
@@ -289,6 +340,7 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
         
         # Mover agentes (mover_agentes_con_conflictos ya maneja goal y agent_positions internamente)
         stats = mover_agentes_con_conflictos(AgentExtendido.instances)
+        conflictos_por_paso.append(stats.get("conflictos", 0))
         
         # Registrar estadísticas de PathSelector
         if path_selector is not None:
@@ -316,10 +368,11 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
         AgentExtendido.stores()
         paso += 1
         activos = sum(1 for a in AgentExtendido.instances if a.activo)
+        activos_por_paso.append(activos)
         if paso % 10 == 0:
             print(f"  Paso {paso}: {activos} activos")
     
-    print(f"\nEvacuación completa en {paso} pasos")
+    print(f"\nEvacuacion completa en {paso} pasos")
     
     # Mostrar estadísticas de PathSelector
     if path_selector is not None:
@@ -360,8 +413,15 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
     with open(archivo, 'wb') as f:
         pickle.dump(AgentExtendido.history, f)
     
-    print(f"\nArchivo: {archivo}")
-    print(f"Visualizar: python visualizador.py {archivo}")
+    csv_path, png_path = _guardar_resultados_reales(
+        nombre_escenario=escenario,
+        total_agentes=config["num_agentes"],
+        activos_por_paso=activos_por_paso,
+        conflictos_por_paso=conflictos_por_paso,
+    )
+    print(f"\nArchivo PKL: {archivo}")
+    print(f"Resultados reales (CSV): {csv_path}")
+    print(f"Resultados reales (grafico): {png_path}")
 
 
 def simular_flujos_opuestos(guardar_pkl=True):
@@ -418,15 +478,19 @@ def simular_flujos_opuestos(guardar_pkl=True):
     paso = 0
     max_pasos = 300
 
+    activos_por_paso = []
+    conflictos_por_paso = []
     while any(a.activo for a in todos) and paso < max_pasos:
         ps_A.actualizar_metricas(todos)
         ps_A.actualizar_pesos_grafo()
         ps_B.actualizar_metricas(todos)
         ps_B.actualizar_pesos_grafo()
 
-        mover_agentes_con_conflictos(todos, goals=goals)
+        stats = mover_agentes_con_conflictos(todos, goals=goals)
+        conflictos_por_paso.append(stats.get("conflictos", 0))
         AgentExtendido.stores()
         paso += 1
+        activos_por_paso.append(sum(1 for a in todos if a.activo))
 
     AgentExtendido.history.append({
         "size_x": esc.width,
@@ -455,6 +519,14 @@ def simular_flujos_opuestos(guardar_pkl=True):
     print(f"Agentes evacuados grupo A: {evac_a} / {n_a}")
     print(f"Agentes evacuados grupo B: {evac_b} / {n_b}")
     print("=" * 60)
+    csv_path, png_path = _guardar_resultados_reales(
+        nombre_escenario="flujos_opuestos",
+        total_agentes=len(todos),
+        activos_por_paso=activos_por_paso,
+        conflictos_por_paso=conflictos_por_paso,
+    )
+    print(f"Resultados reales (CSV): {csv_path}")
+    print(f"Resultados reales (grafico): {png_path}")
 
 
 def menu():

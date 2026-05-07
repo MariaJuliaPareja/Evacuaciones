@@ -316,8 +316,8 @@ def simular_evacuacion(escenario='basico', usar_path_selector=True):
         'by_anxiety_level': {'baja': 0, 'media': 0, 'alta': 0},
         'path_lengths': []
     }
-    activos_por_paso = []
-    conflictos_por_paso = []
+    activos_por_paso = [sum(1 for a in AgentExtendido.instances if a.activo)]
+    conflictos_por_paso = [0]
     
     # Simular hasta evacuar todos
     paso = 0
@@ -478,8 +478,8 @@ def simular_flujos_opuestos(guardar_pkl=True):
     paso = 0
     max_pasos = 300
 
-    activos_por_paso = []
-    conflictos_por_paso = []
+    activos_por_paso = [sum(1 for a in todos if a.activo)]
+    conflictos_por_paso = [0]
     while any(a.activo for a in todos) and paso < max_pasos:
         ps_A.actualizar_metricas(todos)
         ps_A.actualizar_pesos_grafo()

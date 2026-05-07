@@ -24,7 +24,7 @@ def _cargar_resultados(path: Path) -> dict:
 def _extraer_grillas(data: dict) -> tuple[np.ndarray, np.ndarray, dict[str, np.ndarray], int]:
     """
     Construye matrices (rho x log10(1/d)) para T, sigma_T y fracciones de stress.
-    """º
+    """
     meta = data.get("meta", {})
     entries = data.get("resultados", [])
     if not entries:
@@ -116,9 +116,29 @@ def _guardar_fig2(sigma_t: np.ndarray, rho_vals: np.ndarray, d_inv_vals: np.ndar
         sigma_t,
         rho_vals,
         d_inv_vals,
-        title="Figure 2. Evacuation Time Standard Deviation",
+        title="Figure 2. Evacuation Time Standard Deviation\n(blue = deterministic high-density regime)",
         cbar_label=r"$\sigma_T$ [steps]",
     )
+
+    # Si la región de alta densidad (rho > 0.85) tiene sigma ~ 0, anotar régimen determinista.
+    high_density_mask = rho_vals > 0.85
+    if np.any(high_density_mask):
+        sigma_high_density = sigma_t[high_density_mask, :]
+        if np.nanmax(np.abs(sigma_high_density)) < 1e-12:
+            x = float(np.log10(d_inv_vals).mean())
+            y = float((0.85 + rho_vals.max()) / 2.0)
+            ax.text(
+                x,
+                y,
+                "Deterministic regime",
+                color="white",
+                fontsize=11,
+                ha="center",
+                va="center",
+                fontweight="bold",
+                bbox=dict(facecolor="black", alpha=0.35, edgecolor="none", pad=4),
+            )
+
     fig.tight_layout()
     fig.savefig(FIGS_DIR / "fig2_std_evacuacion.png", dpi=300)
     plt.close(fig)

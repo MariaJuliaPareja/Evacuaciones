@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import numpy as np
 from typing import Any
 
 
@@ -162,7 +163,7 @@ def calcular_metricas(historia: list[dict]) -> dict | None:
         fraccion_stress = {"mild": 0.0, "optimal": 0.0, "anxiety": 0.0}
 
     return {
-        "T": ts[0],
+        "T": float(np.mean(ts)),
         "sigma_T": _desv_estandar_poblacional(ts),
         "fraccion_stress": fraccion_stress,
         "n_colisiones": total_colisiones if hay_colisiones else None,

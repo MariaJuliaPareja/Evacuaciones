@@ -189,18 +189,20 @@ if __name__ == "__main__":
     print("\nEscenarios disponibles:")
     print("1) Sala de clases")
     print("2) Avión")
-    print("3) Escenario base")
-    print("4) Flujos opuestos")
+    print("3) Avión dos puertas")
+    print("4) Escenario base")
+    print("5) Flujos opuestos")
     try:
-        opcion = input("\nElige un escenario (1-4): ").strip()
+        opcion = input("\nElige un escenario (1-5): ").strip()
     except (EOFError, KeyboardInterrupt):
         opcion = "1"
 
     mapa = {
         "1": "sala_de_clases",
         "2": "avion",
-        "3": "escenario_base",
-        "4": "flujos_opuestos",
+        "3": "avion_dos_puertas",
+        "4": "escenario_base",
+        "5": "flujos_opuestos",
     }
     nombre_escenario = mapa.get(opcion or "1", "sala_de_clases")
 

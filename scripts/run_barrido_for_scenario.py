@@ -8,8 +8,15 @@ so the rest of the code can run unchanged. It can also override `N_SIMS`.
 """
 import argparse
 import importlib
+import os
+import sys
 from pathlib import Path
 from typing import Any, Dict
+
+# Asegurar que el directorio raíz del proyecto esté en sys.path cuando se ejecuta desde scripts/
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 
 def load_scenario_module(name: str) -> Dict[str, Any]:
@@ -34,7 +41,7 @@ def load_scenario_module(name: str) -> Dict[str, Any]:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--scenario", default="base", choices=["base", "sala_de_clases", "avion"], help="Which scenario to run")
+    parser.add_argument("--scenario", default="base", choices=["base", "sala_de_clases", "avion", "avion_dos_puertas"], help="Which scenario to run")
     parser.add_argument("--n_sims", type=int, default=None, help="Override N_SIMS (for quick tests)")
     parser.add_argument("--out", type=str, default=None, help="Output PKL path")
     args = parser.parse_args()

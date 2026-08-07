@@ -47,6 +47,7 @@ class AgentExtendido:
         y: int,
         U_I: int = 10,
         U_II: int = 20,
+        k_paths_max: int = 5,
     ):
         """
         Inicializa un agente extendido.
@@ -60,6 +61,8 @@ class AgentExtendido:
             Selector de rutas inteligente. Si es None, usa movimiento greedy
         x, y : int
             Posición inicial del agente
+        k_paths_max : int
+            Número máximo de rutas que el agente puede desbloquear (1, 3 o 5)
         """
         # ATRIBUTOS BÁSICOS
         self.id = len(AgentExtendido.instances)
@@ -88,6 +91,7 @@ class AgentExtendido:
         self.ansiedad = 0  # 0-100
         self.steps_without_moving = 0
         self.calmness_threshold = 3  # Umbral para desbloquear rutas
+        self.k_paths_max = max(1, min(5, k_paths_max))
         
         # TRACKING
         self.conflictos_totales = 0
@@ -216,14 +220,14 @@ class AgentExtendido:
             all_paths = self.path_selector.find_progressive_paths(
                 start=pos_actual,
                 goal=goal,
-                num_paths=5
+                num_paths=self.k_paths_max
             )
-        except (ValueError, Exception) as e:
+        except (ValueError, Exception):
             try:
                 all_paths = self.path_selector.find_k_paths(
                     start=pos_actual,
                     goal=goal,
-                    k=min(5, unlocked_count)
+                    k=min(self.k_paths_max, unlocked_count)
                 )
             except Exception:
                 all_paths = []

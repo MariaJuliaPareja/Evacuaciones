@@ -162,9 +162,33 @@ def calcular_metricas(historia: list[dict]) -> dict | None:
     else:
         fraccion_stress = {"mild": 0.0, "optimal": 0.0, "anxiety": 0.0}
 
+    # Normalizar por longitud de la primera historia si hay ensemble y pad con ceros en historias cortas.
+    activos_por_paso: list[int] = []
+    moviendose_por_paso: list[int] = []
+    recalculos_por_paso: list[int] = []
+    if historias:
+        max_len = max(len(h) for h in historias)
+        for paso in range(max_len):
+            activos_sum = 0
+            movidos_sum = 0
+            recalculos_sum = 0
+            for historia_unica in historias:
+                if paso < len(historia_unica):
+                    frame = historia_unica[paso]
+                    activos_sum += int(frame.get("n_activos", 0))
+                    movidos_sum += int(frame.get("n_moviendose", 0))
+                    recalculos_sum += int(frame.get("n_recalculos_pathselector", 0))
+            n = len(historias)
+            activos_por_paso.append(int(round(activos_sum / n)))
+            moviendose_por_paso.append(int(round(movidos_sum / n)))
+            recalculos_por_paso.append(int(round(recalculos_sum / n)))
+
     return {
         "T": float(np.mean(ts)),
         "sigma_T": _desv_estandar_poblacional(ts),
         "fraccion_stress": fraccion_stress,
         "n_colisiones": total_colisiones if hay_colisiones else None,
+        "activos_por_paso": activos_por_paso,
+        "moviendose_por_paso": moviendose_por_paso,
+        "recalculos_por_paso": recalculos_por_paso,
     }

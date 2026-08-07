@@ -15,6 +15,7 @@ import numpy as np
 
 from simulacion.grilla_clasica.floor_field import Floor_field
 from simulacion.pathfinding_propuesta.agent_extendido import AgentExtendido, mover_agentes_con_conflictos
+from simulacion.pathfinding_propuesta.path_selector import PathSelector
 from experimento.metricas import calcular_metricas
 
 
@@ -69,6 +70,7 @@ def _crear_agente(
     posicion: tuple[int, int],
     u_i: float,
     u_ii: float,
+    path_selector: PathSelector | None,
     ya_reportado_todo: bool,
 ) -> bool:
     """
@@ -81,7 +83,7 @@ def _crear_agente(
     kwargs = {
         "agent_type": "rapido",
         "floor_field": floor_field,
-        "path_selector": None,
+        "path_selector": path_selector,
         "x": posicion[0],
         "y": posicion[1],
     }
@@ -117,6 +119,7 @@ def _simular_una_historia(
     np.random.seed(semilla)
 
     ff = Floor_field(width, height, puertas, obstaculos)
+    path_selector = PathSelector(ff, umbral_recalculo=0.6, anxiety_thresholds=(30, 70))
     AgentExtendido.instances = []
     AgentExtendido.history = []
 
@@ -126,7 +129,14 @@ def _simular_una_historia(
     u_ii = 2.0 * d
 
     for pos in posiciones:
-        ya_reportado_todo = _crear_agente(ff, pos, u_i, u_ii, ya_reportado_todo)
+        ya_reportado_todo = _crear_agente(
+            ff,
+            pos,
+            u_i,
+            u_ii,
+            path_selector,
+            ya_reportado_todo,
+        )
 
     historia_frames: list[dict[str, Any]] = []
 
@@ -136,6 +146,11 @@ def _simular_una_historia(
             break
 
         stats = mover_agentes_con_conflictos(AgentExtendido.instances)
+        n_activos = sum(1 for a in AgentExtendido.instances if a.activo)
+        n_moviendose = sum(1 for a in AgentExtendido.instances if getattr(a, "if_change", False))
+        n_recalculos_pathselector = sum(
+            1 for a in AgentExtendido.instances if getattr(a, "recalculated_this_step", False)
+        )
 
         snapshot = [
             SimpleNamespace(
@@ -143,6 +158,8 @@ def _simular_una_historia(
                 ansiedad=getattr(a, "ansiedad", None),
                 U_I=getattr(a, "U_I", None),
                 U_II=getattr(a, "U_II", None),
+                recalculated_this_step=getattr(a, "recalculated_this_step", False),
+                if_change=getattr(a, "if_change", False),
             )
             for a in AgentExtendido.instances
         ]
@@ -150,11 +167,14 @@ def _simular_una_historia(
             {
                 "agentes": snapshot,
                 "conflictos": stats.get("conflictos", 0),
+                "n_activos": n_activos,
+                "n_moviendose": n_moviendose,
+                "n_recalculos_pathselector": n_recalculos_pathselector,
             }
         )
 
     if not historia_frames:
-        historia_frames.append({"agentes": [], "conflictos": 0})
+        historia_frames.append({"agentes": [], "conflictos": 0, "n_activos": 0, "n_recalculos_pathselector": 0})
 
     return historia_frames, ya_reportado_todo
 

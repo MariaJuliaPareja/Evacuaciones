@@ -78,7 +78,6 @@ def detectar_cascadas(recalculo_log: list[dict], ventana: int = 5) -> list[dict]
     if not pasos_sobre_umbral:
         return []
 
-    # Agrupar en tramos consecutivos
     cascadas: list[dict] = []
     tramo_actual: list[tuple[int, int, float]] = [pasos_sobre_umbral[0]]
 
@@ -116,16 +115,64 @@ def detectar_cascadas(recalculo_log: list[dict], ventana: int = 5) -> list[dict]
     return cascadas
 
 
+def calcular_nu_th(recalculo_log: list[dict], ruta_log: list[dict]) -> float:
+    """
+    Calcula la fracción de pasos con al menos 30% de agentes recalculando.
+
+    Si `ruta_log` tiene pasos, se usa su paso máximo para estimar la duración
+    total de la simulación. En caso contrario, se usa el paso máximo de
+    `recalculo_log`.
+    """
+    if not recalculo_log:
+        return 0.0
+
+    recalculos_por_step: dict[int, int] = defaultdict(int)
+    n_recalc_externo_por_step: dict[int, int] = {}
+    unique_agents = set()
+
+    for entry in recalculo_log:
+        step = int(entry.get("step", 0))
+        recalculos_por_step[step] += 1
+
+        agent_id = entry.get("agent_id")
+        if agent_id is not None:
+            unique_agents.add(agent_id)
+
+        n_ext = entry.get("n_agents_recalculating")
+        if isinstance(n_ext, (int, float)):
+            n_recalc_externo_por_step[step] = max(n_recalc_externo_por_step.get(step, 0), int(n_ext))
+
+    if not recalculos_por_step:
+        return 0.0
+
+    total_activo = max(len(unique_agents), max(recalculos_por_step.values()), 1)
+
+    if ruta_log:
+        total_steps = max(int(entry.get("step", 0)) for entry in ruta_log) + 1
+    else:
+        total_steps = max(recalculos_por_step.keys()) + 1
+
+    umbral_fraccion = 0.30
+    pasos_sobre_umbral = 0
+    for step, count in recalculos_por_step.items():
+        n_recalc = n_recalc_externo_por_step.get(step, count)
+        fraccion = n_recalc / total_activo
+        if fraccion >= umbral_fraccion:
+            pasos_sobre_umbral += 1
+
+    return pasos_sobre_umbral / total_steps if total_steps > 0 else 0.0
+
+
 def entropia_rutas(ruta_log: list[dict], n_rutas_posibles: int) -> list[float]:
     """
     Calcula la entropía de Shannon por paso para la selección de rutas.
 
     Para cada `step`, se toma la distribución de `ruta_idx` y se calcula:
-    H = -sum(p_i * log2(p_i))
+    H = -sum(p_i * ln(p_i))
 
     Interpretación:
     - H = 0: todos eligieron la misma ruta (thundering herd puro)
-    - H = log2(n_rutas_posibles): distribución uniforme (diversidad máxima)
+    - H = ln(n_rutas_posibles): distribución uniforme (diversidad máxima)
 
     Parámetros
     ----------
@@ -163,7 +210,7 @@ def entropia_rutas(ruta_log: list[dict], n_rutas_posibles: int) -> list[float]:
         h = 0.0
         for n in conteo.values():
             p_i = n / total
-            h -= p_i * math.log2(p_i)
+            h -= p_i * math.log(p_i)
         entropias.append(h)
 
     return entropias
@@ -211,8 +258,21 @@ def resumen_herd(
     entropias = entropia_rutas(ruta_log, n_rutas_posibles=n_rutas_posibles)
 
     frecuencia_cascadas = len(cascadas)
-    duraciones = [c["duracion"] for c in cascadas]
+    pasos = sorted(c["step"] for c in cascadas)
+    duraciones: list[int] = []
+    if pasos:
+        tramo_actual = [pasos[0]]
+        for step in pasos[1:]:
+            if step == tramo_actual[-1] + 1:
+                tramo_actual.append(step)
+            else:
+                duraciones.append(len(tramo_actual))
+                tramo_actual = [step]
+        duraciones.append(len(tramo_actual))
+
     duracion_media_cascada = mean(duraciones) if duraciones else 0.0
+
+    nu_th = calcular_nu_th(recalculo_log, ruta_log)
 
     entropia_media = mean(entropias) if entropias else 0.0
     entropia_min = min(entropias) if entropias else 0.0
@@ -223,6 +283,7 @@ def resumen_herd(
         "ansiedad_media": ansiedad_media,
         "frecuencia_cascadas": frecuencia_cascadas,
         "duracion_media_cascada": duracion_media_cascada,
+        "nu_th": nu_th,
         "entropia_media": entropia_media,
         "entropia_min": entropia_min,
         "entropia_std": entropia_std,

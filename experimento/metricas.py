@@ -109,12 +109,25 @@ def calcular_metricas(historia: list[dict]) -> dict | None:
     dict | None
         Si la historia esta vacia retorna ``None``.
         En caso contrario retorna un diccionario con:
-        - ``T``: pasos de la primera historia hasta que no queden activos.
+
+        Agregados (compatibles con barridos/plotters existentes):
+        - ``T``: media de tiempos de evacuacion del ensemble.
         - ``sigma_T``: desviacion estandar de T entre historias del ensemble.
         - ``fraccion_stress``: fraccion promedio por etapa
           (``mild``, ``optimal``, ``anxiety``) a lo largo de todos los frames.
-        - ``n_colisiones``: total de colisiones/conflictos detectados; ``None``
-          si la historia no provee esa metrica.
+        - ``n_colisiones``: suma total de colisiones/conflictos del ensemble;
+          ``None`` si la historia no provee esa metrica.
+        - ``activos_por_paso``, ``moviendose_por_paso``, ``recalculos_por_paso``:
+          series temporales promediadas entre corridas.
+
+        Distribuciones por corrida / agente (claves nuevas, aditivas):
+        - ``T_por_corrida``: T de cada historia (largo = N).
+        - ``n_colisiones_por_corrida``: colisiones por historia (largo = N);
+          ``None`` si ninguna historia reporta colisiones.
+        - ``ansiedad_final_por_agente``: ansiedad en el ultimo frame por agente,
+          apilada across corridas.
+        - ``fraccion_stage_III_por_agente``: fraccion de frames en Stage III
+          (anxiety) por agente, apilada across corridas.
     """
     historias = _normalizar_historias(historia)
     if not historias:
@@ -125,17 +138,25 @@ def calcular_metricas(historia: list[dict]) -> dict | None:
     agentes_con_stress = 0
     total_colisiones = 0
     hay_colisiones = False
+    n_colisiones_por_corrida: list[int] = []
+    ansiedad_final_por_agente: list[float] = []
+    fraccion_stage_III_por_agente: list[float] = []
 
     for historia_unica in historias:
         if not historia_unica:
             ts.append(0)
+            n_colisiones_por_corrida.append(0)
             continue
 
         ts.append(_calcular_t(historia_unica))
 
+        colisiones_corrida = 0
+        # agent_id -> (frames_con_ansiedad, frames_stage_III, ultima_ansiedad)
+        por_agente: dict[Any, list[Any]] = {}
+
         for frame in historia_unica:
             agentes = frame.get("agentes", [])
-            for agente in agentes:
+            for idx_agente, agente in enumerate(agentes):
                 valor = _valor_ansiedad(agente)
                 if valor is None:
                     continue
@@ -146,13 +167,35 @@ def calcular_metricas(historia: list[dict]) -> dict | None:
                     u_ii = float(u_ii)
                 except (TypeError, ValueError):
                     u_i, u_ii = 30.0, 70.0
-                conteo_stress[_etapa_ansiedad(valor, u_i, u_ii)] += 1
+                etapa = _etapa_ansiedad(valor, u_i, u_ii)
+                conteo_stress[etapa] += 1
                 agentes_con_stress += 1
+
+                agent_key = getattr(agente, "id", None)
+                if agent_key is None:
+                    agent_key = idx_agente
+                stats = por_agente.get(agent_key)
+                if stats is None:
+                    stats = [0, 0, valor]
+                    por_agente[agent_key] = stats
+                stats[0] += 1
+                if etapa == "anxiety":
+                    stats[1] += 1
+                stats[2] = valor
 
             colisiones_frame = _sumar_colisiones(frame)
             if colisiones_frame is not None:
                 hay_colisiones = True
+                colisiones_corrida += colisiones_frame
                 total_colisiones += colisiones_frame
+
+        n_colisiones_por_corrida.append(colisiones_corrida)
+
+        for n_obs, n_iii, ans_final in por_agente.values():
+            ansiedad_final_por_agente.append(float(ans_final))
+            fraccion_stage_III_por_agente.append(
+                float(n_iii) / float(n_obs) if n_obs > 0 else 0.0
+            )
 
     if agentes_con_stress > 0:
         fraccion_stress = {
@@ -191,4 +234,8 @@ def calcular_metricas(historia: list[dict]) -> dict | None:
         "activos_por_paso": activos_por_paso,
         "moviendose_por_paso": moviendose_por_paso,
         "recalculos_por_paso": recalculos_por_paso,
+        "T_por_corrida": list(ts),
+        "n_colisiones_por_corrida": n_colisiones_por_corrida if hay_colisiones else None,
+        "ansiedad_final_por_agente": ansiedad_final_por_agente,
+        "fraccion_stage_III_por_agente": fraccion_stage_III_por_agente,
     }

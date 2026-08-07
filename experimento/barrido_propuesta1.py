@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import inspect
 import pickle
 import random
@@ -15,6 +16,7 @@ import numpy as np
 
 from simulacion.grilla_clasica.floor_field import Floor_field
 from simulacion.pathfinding_propuesta.agent_extendido import AgentExtendido, mover_agentes_con_conflictos
+from simulacion.pathfinding_propuesta.path_selector import PathSelector
 from experimento.metricas import calcular_metricas
 
 
@@ -25,26 +27,42 @@ MAX_PASOS = 500
 SEED_BASE = 12345
 
 
-def _cargar_escenario_base() -> dict[str, Any]:
+def _cargar_escenario_base(scenario_name: str = "escenario_base", d: float | None = None) -> dict[str, Any]:
     """
-    Carga escenario base desde modulo si existe, o crea fallback.
+    Carga un escenario desde el paquete escenarios o usa fallback.
 
-    Fallback: sala de 20x14 con una salida central de ancho 2 en el borde izquierdo.
+    El parámetro ``d`` permite configurar la distancia entre puertas cuando el
+    módulo del escenario expone una función ``get_config``.
     """
     try:
-        from escenarios import escenario_base as esc
+        if scenario_name in {"base", "escenario_base"}:
+            module_name = "escenario_base"
+        else:
+            module_name = scenario_name
+
+        esc_module = importlib.import_module(f"escenarios.{module_name}")
+        if hasattr(esc_module, "get_config"):
+            config = esc_module.get_config(d=d)
+            return {
+                "width": int(config.get("width", getattr(esc_module, "width", 0))),
+                "height": int(config.get("height", getattr(esc_module, "height", 0))),
+                "puertas": list(config.get("puertas", [])),
+                "obstaculos": list(config.get("obstaculos", [])),
+                "door_distance": config.get("door_distance", None),
+            }
 
         return {
-            "width": int(getattr(esc, "width")),
-            "height": int(getattr(esc, "height")),
-            "puertas": list(getattr(esc, "puertas")),
-            "obstaculos": list(getattr(esc, "obstaculos", [])),
+            "width": int(getattr(esc_module, "width")),
+            "height": int(getattr(esc_module, "height")),
+            "puertas": list(getattr(esc_module, "puertas")),
+            "obstaculos": list(getattr(esc_module, "obstaculos", [])),
+            "door_distance": getattr(esc_module, "door_distance", None),
         }
     except Exception:
         width, height = 20, 14
         y_mid = height // 2
         puertas = [(0, y_mid - 1), (0, y_mid)]
-        return {"width": width, "height": height, "puertas": puertas, "obstaculos": []}
+        return {"width": width, "height": height, "puertas": puertas, "obstaculos": [], "door_distance": None}
 
 
 def _generar_posiciones_iniciales(
@@ -66,6 +84,7 @@ def _generar_posiciones_iniciales(
 
 def _crear_agente(
     floor_field: Floor_field,
+    path_selector: PathSelector | None,
     posicion: tuple[int, int],
     u_i: float,
     u_ii: float,
@@ -81,7 +100,7 @@ def _crear_agente(
     kwargs = {
         "agent_type": "rapido",
         "floor_field": floor_field,
-        "path_selector": None,
+        "path_selector": path_selector,
         "x": posicion[0],
         "y": posicion[1],
     }
@@ -117,8 +136,11 @@ def _simular_una_historia(
     np.random.seed(semilla)
 
     ff = Floor_field(width, height, puertas, obstaculos)
+    path_selector = PathSelector(ff)
     AgentExtendido.instances = []
     AgentExtendido.history = []
+    AgentExtendido.ruta_log.clear()
+    path_selector.reset_log()
 
     posiciones = _generar_posiciones_iniciales(width, height, obstaculos, rho, rng)
     d = 1.0 / d_inv
@@ -126,20 +148,26 @@ def _simular_una_historia(
     u_ii = 2.0 * d
 
     for pos in posiciones:
-        ya_reportado_todo = _crear_agente(ff, pos, u_i, u_ii, ya_reportado_todo)
+        ya_reportado_todo = _crear_agente(ff, path_selector, pos, u_i, u_ii, ya_reportado_todo)
 
     historia_frames: list[dict[str, Any]] = []
 
-    for _ in range(MAX_PASOS):
+    for step in range(MAX_PASOS):
         activos = [a for a in AgentExtendido.instances if a.activo]
         if not activos:
             break
 
+        for agente in activos:
+            agente._current_simulation_step = step
+
+        prev_recalculos = len(path_selector.recalculo_log)
         stats = mover_agentes_con_conflictos(AgentExtendido.instances)
+        n_recalculos_step = max(0, len(path_selector.recalculo_log) - prev_recalculos)
 
         snapshot = [
             SimpleNamespace(
                 activo=a.activo,
+                if_change=getattr(a, "if_change", False),
                 ansiedad=getattr(a, "ansiedad", None),
                 U_I=getattr(a, "U_I", None),
                 U_II=getattr(a, "U_II", None),
@@ -150,20 +178,23 @@ def _simular_una_historia(
             {
                 "agentes": snapshot,
                 "conflictos": stats.get("conflictos", 0),
+                "n_agentes_activos": len(activos),
+                "n_agentes_movidos": int(stats.get("movidos", 0)),
+                "n_recalculos_ruta": int(n_recalculos_step),
             }
         )
 
     if not historia_frames:
-        historia_frames.append({"agentes": [], "conflictos": 0})
+        historia_frames.append({"agentes": [], "conflictos": 0, "n_agentes_activos": 0, "n_agentes_movidos": 0, "n_recalculos_ruta": 0})
 
     return historia_frames, ya_reportado_todo
 
 
-def ejecutar_barrido() -> dict[str, Any]:
+def ejecutar_barrido(scenario_name: str = "escenario_base", d: float | None = None) -> dict[str, Any]:
     """
     Ejecuta barrido sobre (rho, 1/d) y calcula metricas por combinacion.
     """
-    esc = _cargar_escenario_base()
+    esc = _cargar_escenario_base(scenario_name=scenario_name, d=d)
     width = esc["width"]
     height = esc["height"]
     puertas = esc["puertas"]
@@ -180,7 +211,10 @@ def ejecutar_barrido() -> dict[str, Any]:
                 "height": height,
                 "puertas": puertas,
                 "obstaculos": obstaculos,
+                "door_distance": esc.get("door_distance"),
             },
+            "scenario_name": scenario_name,
+            "door_distance": esc.get("door_distance"),
         },
         "resultados": [],
     }

@@ -47,6 +47,7 @@ class AgentExtendido:
         y: int,
         U_I: int = 10,
         U_II: int = 20,
+        max_unlocked_paths: int | None = None,
     ):
         """
         Inicializa un agente extendido.
@@ -60,6 +61,9 @@ class AgentExtendido:
             Selector de rutas inteligente. Si es None, usa movimiento greedy
         x, y : int
             Posición inicial del agente
+        max_unlocked_paths : int | None
+            Techo de rutas desbloqueables (1, 3 o 5). Si es None, usar el
+            comportamiento progresivo por defecto del PathSelector.
         """
         # ATRIBUTOS BÁSICOS
         self.id = len(AgentExtendido.instances)
@@ -88,6 +92,7 @@ class AgentExtendido:
         self.ansiedad = 0  # 0-100
         self.steps_without_moving = 0
         self.calmness_threshold = 3  # Umbral para desbloquear rutas
+        self.max_unlocked_paths = max_unlocked_paths
         
         # TRACKING
         self.conflictos_totales = 0
@@ -185,7 +190,9 @@ class AgentExtendido:
                 path_index=self.path_index,
                 agent_positions=agent_positions,
                 steps_without_moving=self.steps_without_moving,
-                anxiety_level=None  # Ya no usar ansiedad para decidir recálculo
+                anxiety_level=None,  # Ya no usar ansiedad para decidir recálculo
+                step=current_step,
+                agent_id=id(self),
             )
         )
         
@@ -210,13 +217,16 @@ class AgentExtendido:
             steps_without_moving=current_stuck,
             calmness_threshold=self.calmness_threshold
         )
+        if self.max_unlocked_paths is not None:
+            unlocked_count = min(unlocked_count, self.max_unlocked_paths)
         
         # Encontrar rutas
+        num_paths = 5 if self.max_unlocked_paths is None else min(5, self.max_unlocked_paths)
         try:
             all_paths = self.path_selector.find_progressive_paths(
                 start=pos_actual,
                 goal=goal,
-                num_paths=5
+                num_paths=num_paths
             )
         except (ValueError, Exception) as e:
             try:
@@ -567,15 +577,13 @@ def mover_agentes_con_conflictos(agentes: List[AgentExtendido],
     
     # Paso 1: Cada agente propone su movimiento
     propuestas = {}  # {agente_id: (x, y)}
-    agent_positions = {}  # {(x, y): [agente_id, ...]}
+    agent_positions = {}  # {(x, y): número de agentes en esa celda}
     
     # Calcular posiciones actuales
     for agente in agentes:
         if agente.activo and agente.pos_x is not None and agente.pos_y is not None:
             pos = (agente.pos_x, agente.pos_y)
-            if pos not in agent_positions:
-                agent_positions[pos] = []
-            agent_positions[pos].append(agente.id)
+            agent_positions[pos] = agent_positions.get(pos, 0) + 1
     
     # Obtener propuestas de movimiento
     for agente in agentes:

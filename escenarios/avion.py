@@ -3,7 +3,23 @@
 width = 9
 height = 30
 k_puertas = 2
-puertas = [(0,14),(0,15),(8,14),(8,15)]
+
+# Distancia configurable de las puertas respecto a los extremos del pasillo.
+# Valores más pequeños las acercan al centro; valores más grandes las empujan hacia los extremos.
+# El valor por defecto 0 coloca las puertas en los extremos reales del pasillo.
+distancia_puertas = 0
+x_pasillo = width // 2  # columna central del pasillo
+
+y_delantera = height - 1 - distancia_puertas
+y_trasera = distancia_puertas
+
+# Dos puertas realistas: una en el extremo frontal (arriba) y otra en el extremo trasero (abajo).
+# Ambas quedan centradas en el eje X del pasillo, en lugar de las cuatro puertas del medio.
+puertas = [
+    (x_pasillo, y_delantera),
+    (x_pasillo, y_trasera),
+]
+
 obstaculos = [
     # fila 1
     (1,1),(2,1),(3,1),(5,1),(6,1),(7,1),

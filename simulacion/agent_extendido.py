@@ -581,6 +581,9 @@ def mover_agentes_con_conflictos(agentes: List[AgentExtendido],
                 agent_positions[pos] = []
             agent_positions[pos].append(agente.id)
     
+    # PathSelector.should_recalculate espera conteos {(x,y): n}, no listas de ids.
+    agent_position_counts = {pos: len(ids) for pos, ids in agent_positions.items()}
+
     # Obtener propuestas de movimiento
     for agente in agentes:
         if not agente.activo:
@@ -592,7 +595,7 @@ def mover_agentes_con_conflictos(agentes: List[AgentExtendido],
             goal = goals[agente.id]
         
         # Proponer movimiento
-        destino = agente.proponer_movimiento(goal, agent_positions)
+        destino = agente.proponer_movimiento(goal, agent_position_counts)
         propuestas[agente.id] = destino
     
     # Paso 2: Detectar conflictos
@@ -602,7 +605,9 @@ def mover_agentes_con_conflictos(agentes: List[AgentExtendido],
             destinos_agentes[destino] = []
         destinos_agentes[destino].append(agente_id)
     
-    # Paso 3: Resolver conflictos y mover
+    # Paso 3: Resolver conflictos y mover, con ocupación compartida del frame.
+    # celdas_ocupadas se actualiza al resolver cada grupo para evitar que un
+    # agente entre a la celda de otro que perdió un conflicto distinto y se quedó.
     movidos = 0
     conflictos_totales = 0
     conflictos_resueltos = 0
@@ -612,71 +617,109 @@ def mover_agentes_con_conflictos(agentes: List[AgentExtendido],
     
     # Crear diccionario de agentes por ID para acceso rápido
     agentes_dict = {agente.id: agente for agente in agentes}
+
+    celdas_ocupadas = {
+        (agente.pos_x, agente.pos_y)
+        for agente in agentes
+        if agente.activo and agente.pos_x is not None and agente.pos_y is not None
+    }
+
+    def _prioridad(agente: "AgentExtendido") -> tuple:
+        if agente.floor_field is not None:
+            try:
+                floor_value = agente.floor_field.valores[agente.pos_y, agente.pos_x]
+            except (IndexError, AttributeError):
+                floor_value = 500
+        else:
+            floor_value = 500
+        tipo_priority = 0 if agente.tipo == "rapido" else 1
+        return (floor_value, tipo_priority, agente)
+
+    def _elegir_ganador(candidatos: List["AgentExtendido"]) -> "AgentExtendido":
+        nonlocal conflictos_empate_random
+        info = [_prioridad(a) for a in candidatos]
+        min_floor = min(item[0] for item in info)
+        por_floor = [item for item in info if item[0] == min_floor]
+        min_tipo = min(item[1] for item in por_floor)
+        por_tipo = [item for item in por_floor if item[1] == min_tipo]
+        if len(por_tipo) > 1:
+            conflictos_empate_random += 1
+            return random.choice(por_tipo)[2]
+        return por_tipo[0][2]
+
+    def _mover_reclamando(agente: "AgentExtendido", destino: Tuple[int, int]) -> bool:
+        """Mueve si destino está libre (o es la celda actual); actualiza ocupación."""
+        nonlocal movidos
+        origen = (agente.pos_x, agente.pos_y)
+        dest = (int(destino[0]), int(destino[1]))
+        if dest != origen and dest in celdas_ocupadas:
+            agente.mover_a(*origen)
+            return False
+        agente.mover_a(*dest)
+        if dest != origen:
+            celdas_ocupadas.discard(origen)
+            celdas_ocupadas.add(dest)
+            movidos += 1
+        return True
     
     # Procesar cada destino
     for destino, agentes_ids in destinos_agentes.items():
-        if len(agentes_ids) == 1:
-            # Sin conflicto: mover directamente
-            agente_id = agentes_ids[0]
-            agente = agentes_dict[agente_id]
-            if agente.activo:
-                agente.mover_a(*destino)
-                movidos += 1
-        else:
-            # CONFLICTO: varios agentes quieren la misma celda
-            conflictos_totales += 1
-            
-            agentes_conflicto = [agentes_dict[aid] for aid in agentes_ids if aid in agentes_dict]
+        dest = (int(destino[0]), int(destino[1]))
+        grupo = [
+            agentes_dict[aid]
+            for aid in agentes_ids
+            if aid in agentes_dict and agentes_dict[aid].activo
+        ]
+        if not grupo:
+            continue
 
-            # Resolver prioridad explícitamente para poder telemetría de desempates.
-            # 1) menor floor_field, 2) tipo ('rapido' > 'lento'), 3) random.choice.
-            info_prioridad = []
-            for agente in agentes_conflicto:
-                if agente.floor_field is not None:
-                    try:
-                        floor_value = agente.floor_field.valores[agente.pos_y, agente.pos_x]
-                    except (IndexError, AttributeError):
-                        floor_value = 500
-                else:
-                    floor_value = 500
-                tipo_priority = 0 if agente.tipo == 'rapido' else 1
-                info_prioridad.append((agente, floor_value, tipo_priority))
+        # Elegibles: ya están en dest, o dest no está reclamada en este frame.
+        elegibles = [
+            a for a in grupo
+            if (a.pos_x, a.pos_y) == dest or dest not in celdas_ocupadas
+        ]
 
-            min_floor = min(item[1] for item in info_prioridad)
-            candidatos_floor = [item for item in info_prioridad if item[1] == min_floor]
-
-            min_tipo = min(item[2] for item in candidatos_floor)
-            candidatos_tipo = [item for item in candidatos_floor if item[2] == min_tipo]
-
-            if len(candidatos_tipo) > 1:
-                conflictos_empate_random += 1
-                elegido = random.choice(candidatos_tipo)
+        if len(grupo) == 1:
+            agente = grupo[0]
+            if agente in elegibles:
+                _mover_reclamando(agente, dest)
             else:
-                elegido = candidatos_tipo[0]
+                # Conflicto indirecto: destino aún ocupado por otro agente del frame.
+                conflictos_totales += 1
+                agente.mover_a(agente.pos_x, agente.pos_y)
+                agente.conflictos_totales += 1
+                agente.conflictos_perdidos += 1
+                conflictos_resueltos += 1
+            continue
 
-            ganador = elegido[0]
-            perdedores = [a for a in agentes_conflicto if a.id != ganador.id]
+        # CONFLICTO: varios agentes quieren la misma celda
+        conflictos_totales += 1
 
-            # Clasificación de ganador para telemetría de paper.
-            if ganador.tipo == 'rapido' and any(p.tipo == 'lento' for p in perdedores):
-                conflictos_rapido_gana += 1
-            elif ganador.tipo == 'lento':
-                conflictos_lento_gana += 1
-            
-            # Mover ganador
-            if ganador.activo:
-                ganador.mover_a(*destino)
-                movidos += 1
-                ganador.conflictos_totales += 1
-            
-            # Perdedores se quedan en su lugar (mover_a a posición actual)
-            for perdedor in perdedores:
-                if perdedor.activo:
-                    perdedor.mover_a(perdedor.pos_x, perdedor.pos_y)
-                    perdedor.conflictos_totales += 1
-                    perdedor.conflictos_perdidos += 1
-            
+        if not elegibles:
+            for agente in grupo:
+                agente.mover_a(agente.pos_x, agente.pos_y)
+                agente.conflictos_totales += 1
+                agente.conflictos_perdidos += 1
             conflictos_resueltos += 1
+            continue
+
+        ganador = _elegir_ganador(elegibles)
+        perdedores = [a for a in grupo if a.id != ganador.id]
+
+        if ganador.tipo == "rapido" and any(p.tipo == "lento" for p in perdedores):
+            conflictos_rapido_gana += 1
+        elif ganador.tipo == "lento":
+            conflictos_lento_gana += 1
+
+        _mover_reclamando(ganador, dest)
+        ganador.conflictos_totales += 1
+
+        for perdedor in perdedores:
+            perdedor.mover_a(perdedor.pos_x, perdedor.pos_y)
+            perdedor.conflictos_totales += 1
+            perdedor.conflictos_perdidos += 1
+
+        conflictos_resueltos += 1
     
     return {
         'movidos': movidos,

@@ -1,0 +1,25 @@
+==== fixed barridos N=100 2026-08-14T14:18:37 ====
+order scenarios: ['sala_de_clases', 'base', 'avion_dos_puertas']
+densities: 0.25 -> 1.0 (RHO_VALS)
+START_FULL order=['sala_de_clases', 'base', 'avion_dos_puertas'] N_SIMS=100
+START_SCENARIO motor=PRU scenario=sala_de_clases
+SCENARIO_DONE motor=PRU scenario=sala_de_clases elapsed_s=583.7 peak_rss_mb=1453.2 overlap_pct=0.0 out=barrido_propuesta1_sala_de_clases_fixed.pkl
+START_SCENARIO motor=PFF scenario=sala_de_clases
+SCENARIO_DONE motor=PFF scenario=sala_de_clases elapsed_s=709.8 peak_rss_mb=1450.6 overlap_pct=0 out=barrido_pff_sala_de_clases_fixed.pkl
+START_SCENARIO motor=PRU scenario=base
+
+==== SKIP base 2026-08-14T14:51:08.8497634-05:00; continue avion only ====
+==== fixed barridos N=100 2026-08-14T14:51:09 ====
+order scenarios: ['avion_dos_puertas']
+densities: 0.25 -> 1.0 (RHO_VALS)
+START_FULL order=['avion_dos_puertas'] N_SIMS=100
+START_SCENARIO motor=PRU scenario=avion_dos_puertas
+SCENARIO_DONE motor=PRU scenario=avion_dos_puertas elapsed_s=1376.3 peak_rss_mb=2517.9 overlap_pct=0.0 out=barrido_propuesta1_avion_dos_puertas_fixed.pkl
+START_SCENARIO motor=PFF scenario=avion_dos_puertas
+SCENARIO_DONE motor=PFF scenario=avion_dos_puertas elapsed_s=1813.4 peak_rss_mb=2392.6 overlap_pct=0 out=barrido_pff_avion_dos_puertas_fixed.pkl
+ALL_FIXED_BARRIDOS_OK total_s=3190.7
+==== fixed barridos N=100 2026-08-14T16:24:09 ====
+order scenarios: ['sala_de_clases', 'avion_dos_puertas']
+densities: 0.25 -> 1.0 (RHO_VALS)
+START_FULL order=['sala_de_clases', 'avion_dos_puertas'] N_SIMS=100
+START_SCENARIO motor=PRU scenario=sala_de_clases

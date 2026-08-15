@@ -62,6 +62,10 @@ def main():
     salida = Path(args.out) if args.out else Path("salidas") / "experimentos" / f"barrido_propuesta1_{args.scenario}.pkl"
     print(f"Running barrido_propuesta1 for scenario={args.scenario}, N_SIMS={bp.N_SIMS}")
     data = bp.ejecutar_barrido()
+    data.setdefault("meta", {})
+    data["meta"]["motor"] = "PRU-A*"
+    data["meta"]["tag"] = "fixed_post_occupation_bug"
+    data["meta"]["scenario"] = args.scenario
 
     bp.guardar_resultados(data, salida)
     print(f"Saved: {salida}")

@@ -16,7 +16,8 @@ from typing import Any
 
 import numpy as np
 
-from experimento.metricas import calcular_metricas
+from experimento.metricas import calcular_metricas, combinar_metricas
+import gc
 
 try:
     from simulacion.grilla_clasica.floor_field import Floor_field
@@ -139,7 +140,7 @@ def ejecutar_barrido() -> dict[str, Any]:
 
     for rho in RHO_VALS:
         for d_inv in D_INV_VALS:
-            ensemble: list[list[dict[str, Any]]] = []
+            parciales: list[dict[str, Any]] = []
             for i in range(N_SIMS):
                 semilla = SEED_BASE + i + int(1_000_000 * float(rho)) + int(10_000 * float(d_inv))
                 historia = _simular_una_historia(
@@ -151,9 +152,11 @@ def ejecutar_barrido() -> dict[str, Any]:
                     d_inv=float(d_inv),
                     semilla=semilla,
                 )
-                ensemble.append(historia)
+                parciales.append(calcular_metricas(historia))
+                del historia
+                gc.collect()
 
-            metricas = calcular_metricas(ensemble)
+            metricas = combinar_metricas(parciales)
             resultados["resultados"].append(
                 {
                     "rho": float(rho),
@@ -164,8 +167,11 @@ def ejecutar_barrido() -> dict[str, Any]:
                 }
             )
             procesadas += 1
-            if procesadas % 10 == 0:
-                print(f"Progreso PFF: {procesadas}/{total_combinaciones} combinaciones completadas")
+            if procesadas % 10 == 0 or procesadas == total_combinaciones:
+                print(
+                    f"Progreso PFF: {procesadas}/{total_combinaciones} combinaciones completadas",
+                    flush=True,
+                )
 
     return resultados
 

@@ -238,4 +238,87 @@ def calcular_metricas(historia: list[dict]) -> dict | None:
         "n_colisiones_por_corrida": n_colisiones_por_corrida if hay_colisiones else None,
         "ansiedad_final_por_agente": ansiedad_final_por_agente,
         "fraccion_stage_III_por_agente": fraccion_stage_III_por_agente,
+        # Para fusionar corridas sin retener historias completas en RAM:
+        "conteo_stress": dict(conteo_stress),
+        "n_obs_stress": int(agentes_con_stress),
+    }
+
+
+def combinar_metricas(parciales: list[dict]) -> dict | None:
+    """Combina metricas por-corrida (salida de ``calcular_metricas`` en 1 historia).
+
+    Permite barridos N grandes sin acumular el ensemble de frames en memoria.
+    El resultado es equivalente a ``calcular_metricas(ensemble)``.
+    """
+    parciales = [p for p in parciales if isinstance(p, dict)]
+    if not parciales:
+        return None
+
+    ts: list[int] = []
+    n_colisiones_por_corrida: list[int] = []
+    hay_colisiones = False
+    ansiedad_final_por_agente: list[float] = []
+    fraccion_stage_III_por_agente: list[float] = []
+    conteo_stress = {"mild": 0, "optimal": 0, "anxiety": 0}
+    n_obs_stress = 0
+    series_activos: list[list[int]] = []
+    series_mov: list[list[int]] = []
+    series_rec: list[list[int]] = []
+
+    for p in parciales:
+        ts.extend(int(t) for t in p.get("T_por_corrida", []))
+        cols = p.get("n_colisiones_por_corrida")
+        if cols is not None:
+            hay_colisiones = True
+            n_colisiones_por_corrida.extend(int(c) for c in cols)
+        ansiedad_final_por_agente.extend(
+            float(v) for v in (p.get("ansiedad_final_por_agente") or [])
+        )
+        fraccion_stage_III_por_agente.extend(
+            float(v) for v in (p.get("fraccion_stage_III_por_agente") or [])
+        )
+        raw = p.get("conteo_stress") or {}
+        for etapa in conteo_stress:
+            conteo_stress[etapa] += int(raw.get(etapa, 0))
+        n_obs_stress += int(p.get("n_obs_stress", 0))
+        series_activos.append(list(p.get("activos_por_paso") or []))
+        series_mov.append(list(p.get("moviendose_por_paso") or []))
+        series_rec.append(list(p.get("recalculos_por_paso") or []))
+
+    if n_obs_stress > 0:
+        fraccion_stress = {
+            etapa: conteo / n_obs_stress for etapa, conteo in conteo_stress.items()
+        }
+    else:
+        fraccion_stress = {"mild": 0.0, "optimal": 0.0, "anxiety": 0.0}
+
+    n = len(parciales)
+    max_len = max((len(s) for s in series_activos), default=0)
+    activos_por_paso: list[int] = []
+    moviendose_por_paso: list[int] = []
+    recalculos_por_paso: list[int] = []
+    for paso in range(max_len):
+        a_sum = sum(s[paso] if paso < len(s) else 0 for s in series_activos)
+        m_sum = sum(s[paso] if paso < len(s) else 0 for s in series_mov)
+        r_sum = sum(s[paso] if paso < len(s) else 0 for s in series_rec)
+        activos_por_paso.append(int(round(a_sum / n)))
+        moviendose_por_paso.append(int(round(m_sum / n)))
+        recalculos_por_paso.append(int(round(r_sum / n)))
+
+    total_colisiones = sum(n_colisiones_por_corrida) if hay_colisiones else None
+
+    return {
+        "T": float(np.mean(ts)) if ts else 0.0,
+        "sigma_T": _desv_estandar_poblacional(ts),
+        "fraccion_stress": fraccion_stress,
+        "n_colisiones": total_colisiones,
+        "activos_por_paso": activos_por_paso,
+        "moviendose_por_paso": moviendose_por_paso,
+        "recalculos_por_paso": recalculos_por_paso,
+        "T_por_corrida": list(ts),
+        "n_colisiones_por_corrida": n_colisiones_por_corrida if hay_colisiones else None,
+        "ansiedad_final_por_agente": ansiedad_final_por_agente,
+        "fraccion_stage_III_por_agente": fraccion_stage_III_por_agente,
+        "conteo_stress": dict(conteo_stress),
+        "n_obs_stress": int(n_obs_stress),
     }

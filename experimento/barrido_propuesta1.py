@@ -16,7 +16,8 @@ import numpy as np
 from simulacion.grilla_clasica.floor_field import Floor_field
 from simulacion.pathfinding_propuesta.agent_extendido import AgentExtendido, mover_agentes_con_conflictos
 from simulacion.pathfinding_propuesta.path_selector import PathSelector
-from experimento.metricas import calcular_metricas
+from experimento.metricas import calcular_metricas, combinar_metricas
+import gc
 
 
 RHO_VALS = [0.25, 0.50, 0.75, 1.0]
@@ -211,7 +212,8 @@ def ejecutar_barrido() -> dict[str, Any]:
 
     for rho in RHO_VALS:
         for d_inv in D_INV_VALS:
-            ensemble: list[list[dict[str, Any]]] = []
+            # Metricas por corrida y merge: evita retener N historias completas en RAM.
+            parciales: list[dict[str, Any]] = []
 
             for i in range(N_SIMS):
                 semilla = SEED_BASE + i + int(1_000_000 * float(rho)) + int(10_000 * float(d_inv))
@@ -225,9 +227,13 @@ def ejecutar_barrido() -> dict[str, Any]:
                     semilla=semilla,
                     ya_reportado_todo=todo_reportado,
                 )
-                ensemble.append(historia)
+                parciales.append(calcular_metricas(historia))
+                del historia
+                AgentExtendido.instances = []
+                AgentExtendido.history = []
+                gc.collect()
 
-            metricas = calcular_metricas(ensemble)
+            metricas = combinar_metricas(parciales)
 
             resultados["resultados"].append(
                 {
@@ -240,8 +246,11 @@ def ejecutar_barrido() -> dict[str, Any]:
             )
 
             procesadas += 1
-            if procesadas % 10 == 0:
-                print(f"Progreso: {procesadas}/{total_combinaciones} combinaciones completadas")
+            if procesadas % 10 == 0 or procesadas == total_combinaciones:
+                print(
+                    f"Progreso: {procesadas}/{total_combinaciones} combinaciones completadas",
+                    flush=True,
+                )
 
     return resultados
 

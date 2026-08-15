@@ -1,0 +1,14 @@
+{"event": "start", "scenarios": ["sala_de_clases", "base", "avion_dos_puertas"], "n_sims": 100}
+{"event": "start_scenario", "motor": "PRU", "scenario": "sala_de_clases"}
+{"event": "SCENARIO_DONE", "motor": "PRU", "scenario": "sala_de_clases", "out": "C:\\Users\\WINDOWS\\Evacuaciones\\salidas\\experimentos\\barrido_propuesta1_sala_de_clases_fixed.pkl", "elapsed_s": 583.7, "peak_rss_mb": 1453.2, "rss0_mb": 19.7, "overlap_pct": 0.0, "overlap_detail": {"frames": 85, "agent_frames": 2133, "overlap_agent_frames": 0, "overlap_pct": 0.0}, "ok": true}
+{"event": "start_scenario", "motor": "PFF", "scenario": "sala_de_clases"}
+{"event": "SCENARIO_DONE", "motor": "PFF", "scenario": "sala_de_clases", "out": "C:\\Users\\WINDOWS\\Evacuaciones\\salidas\\experimentos\\barrido_pff_sala_de_clases_fixed.pkl", "elapsed_s": 709.8, "peak_rss_mb": 1450.6, "rss0_mb": 1450.2, "overlap_pct": 0.0, "overlap_note": "PFF filtra ocupadas al proponer; muestra no instrumentada", "ok": true}
+{"event": "start_scenario", "motor": "PRU", "scenario": "base"}
+{"event": "start", "scenarios": ["avion_dos_puertas"], "n_sims": 100}
+{"event": "start_scenario", "motor": "PRU", "scenario": "avion_dos_puertas"}
+{"event": "SCENARIO_DONE", "motor": "PRU", "scenario": "avion_dos_puertas", "out": "C:\\Users\\WINDOWS\\Evacuaciones\\salidas\\experimentos\\barrido_propuesta1_avion_dos_puertas_fixed.pkl", "elapsed_s": 1376.3, "peak_rss_mb": 2517.9, "rss0_mb": 20.4, "overlap_pct": 0.0, "overlap_detail": {"frames": 104, "agent_frames": 5511, "overlap_agent_frames": 0, "overlap_pct": 0.0}, "ok": true}
+{"event": "start_scenario", "motor": "PFF", "scenario": "avion_dos_puertas"}
+{"event": "SCENARIO_DONE", "motor": "PFF", "scenario": "avion_dos_puertas", "out": "C:\\Users\\WINDOWS\\Evacuaciones\\salidas\\experimentos\\barrido_pff_avion_dos_puertas_fixed.pkl", "elapsed_s": 1813.4, "peak_rss_mb": 2392.6, "rss0_mb": 2391.8, "overlap_pct": 0.0, "overlap_note": "PFF filtra ocupadas al proponer; muestra no instrumentada", "ok": true}
+{"event": "all_done", "total_s": 3190.7}
+{"event": "start", "scenarios": ["sala_de_clases", "avion_dos_puertas"], "n_sims": 100}
+{"event": "start_scenario", "motor": "PRU", "scenario": "sala_de_clases"}

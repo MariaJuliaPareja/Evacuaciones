@@ -141,10 +141,13 @@ def _simular_una_historia(
 
     historia_frames: list[dict[str, Any]] = []
 
-    for _ in range(MAX_PASOS):
+    for step in range(MAX_PASOS):
         activos = [a for a in AgentExtendido.instances if a.activo]
         if not activos:
             break
+
+        for a in activos:
+            a._current_simulation_step = step
 
         stats = mover_agentes_con_conflictos(AgentExtendido.instances)
         n_activos = sum(1 for a in AgentExtendido.instances if a.activo)

@@ -36,6 +36,9 @@ JOBS = [
 
 # Reference cell for A/B/C: high density + mid d_inv (illustrative, same across panels).
 RHO_REF = 1.0
+# Extra A/B/C at rho=0.5; suffix matches existing *_rho0p5.png names.
+RHO_EXTRA_ABC = 0.5
+SUFFIX_RHO_05 = "_rho0p5"
 
 
 def _load(pkl: Path) -> dict:
@@ -201,12 +204,18 @@ def fig_d(
     plt.close(fig)
 
 
-def process_job(job: dict) -> dict:
+def process_job(
+    job: dict,
+    rho: float = RHO_REF,
+    *,
+    make_d: bool = True,
+    name_suffix: str = "",
+) -> dict:
     data = _load(job["pkl"])
     by = _entries_by_rho_dinv(data)
-    d_inv_vals = sorted({k[1] for k in by if abs(k[0] - RHO_REF) < 1e-12})
+    d_inv_vals = sorted({k[1] for k in by if abs(k[0] - rho) < 1e-12})
     d_ref = _mid_d_inv(d_inv_vals)
-    entry = by[(RHO_REF, d_ref)]
+    entry = by[(rho, d_ref)]
     m = entry["metricas"]
 
     ansiedad = np.asarray(m["ansiedad_final_por_agente"], dtype=float)
@@ -222,61 +231,62 @@ def process_job(job: dict) -> dict:
     # mixed U_I/U_II regimes across the anxiety-threshold sweep.
     stats_a = fig_a(
         ansiedad,
-        out_dir / f"{esc}_A_cola_larga.png",
+        out_dir / f"{esc}_A_cola_larga{name_suffix}.png",
         title=f"A. Final-anxiety distribution — {label}\n"
-        rf"$\rho={RHO_REF}$, $1/d={d_ref:.4g}$ (N={len(ansiedad)} agents)",
+        rf"$\rho={rho}$, $1/d={d_ref:.4g}$ (N={len(ansiedad)} agents)",
     )
     fig_b(
         cols,
-        out_dir / f"{esc}_B_colisiones.png",
+        out_dir / f"{esc}_B_colisiones{name_suffix}.png",
         title=f"B. Collisions per run — {label}\n"
-        rf"$\rho={RHO_REF}$, $1/d={d_ref:.4g}$ (100 sims)",
+        rf"$\rho={rho}$, $1/d={d_ref:.4g}$ (100 sims)",
     )
     fig_c(
         j_t,
-        out_dir / f"{esc}_C_flujo.png",
+        out_dir / f"{esc}_C_flujo{name_suffix}.png",
         title=f"C. Movement flux $J(t)$ — {label}\n"
-        rf"$\rho={RHO_REF}$, $1/d={d_ref:.4g}$ (ensemble-averaged)",
+        rf"$\rho={rho}$, $1/d={d_ref:.4g}$ (ensemble-averaged)",
     )
 
-    # D: one point per d_inv at rho=RHO_REF.
-    # IMPORTANT: ansiedad_final_por_agente is nearly invariant across d_inv (U_I/U_II
-    # only change stage labels, not the raw anxiety process), so its asymmetry is flat.
-    # Use fraccion_stage_III_por_agente, which does track the threshold sweep.
-    # Iterate resultados directly (no float-key lookup) so each point maps to its cell.
-    rows_rho = sorted(
-        (e for e in data["resultados"] if abs(float(e["rho"]) - RHO_REF) < 1e-12),
-        key=lambda e: float(e["d_inv"]),
-    )
     dinvs: list[float] = []
     sig_ps: list[float] = []
     sig_ms: list[float] = []
     crits: list[float] = []
     means_iii: list[float] = []
-    for e in rows_rho:
-        d_inv = float(e["d_inv"])
-        frac_iii = np.asarray(e["metricas"]["fraccion_stage_III_por_agente"], dtype=float)
-        sp, sm, c = _sigma_plus_minus_percentile(frac_iii, eps=1e-6)
-        dinvs.append(d_inv)
-        sig_ps.append(sp)
-        sig_ms.append(sm)
-        crits.append(c)
-        means_iii.append(float(np.mean(frac_iii)) if frac_iii.size else 0.0)
+    if make_d:
+        # D: one point per d_inv at the requested rho.
+        # IMPORTANT: ansiedad_final_por_agente is nearly invariant across d_inv (U_I/U_II
+        # only change stage labels, not the raw anxiety process), so its asymmetry is flat.
+        # Use fraccion_stage_III_por_agente, which does track the threshold sweep.
+        # Iterate resultados directly (no float-key lookup) so each point maps to its cell.
+        rows_rho = sorted(
+            (e for e in data["resultados"] if abs(float(e["rho"]) - rho) < 1e-12),
+            key=lambda e: float(e["d_inv"]),
+        )
+        for e in rows_rho:
+            d_inv = float(e["d_inv"])
+            frac_iii = np.asarray(e["metricas"]["fraccion_stage_III_por_agente"], dtype=float)
+            sp, sm, c = _sigma_plus_minus_percentile(frac_iii, eps=1e-6)
+            dinvs.append(d_inv)
+            sig_ps.append(sp)
+            sig_ms.append(sm)
+            crits.append(c)
+            means_iii.append(float(np.mean(frac_iii)) if frac_iii.size else 0.0)
 
-    fig_d(
-        np.asarray(dinvs),
-        np.asarray(sig_ps),
-        np.asarray(sig_ms),
-        np.asarray(crits),
-        out_dir / f"{esc}_D_asimetria.png",
-        title=f"D. Asymmetry vs $1/d$ — {label}\n"
-        rf"Stage-III fraction percentiles at $\rho={RHO_REF}$ "
-        rf"({len(dinvs)} cells)",
-    )
+        fig_d(
+            np.asarray(dinvs),
+            np.asarray(sig_ps),
+            np.asarray(sig_ms),
+            np.asarray(crits),
+            out_dir / f"{esc}_D_asimetria{name_suffix}.png",
+            title=f"D. Asymmetry vs $1/d$ — {label}\n"
+            rf"Stage-III fraction percentiles at $\rho={rho}$ "
+            rf"({len(dinvs)} cells)",
+        )
 
     return {
         "escenario": esc,
-        "rho_ref": RHO_REF,
+        "rho_ref": rho,
         "d_inv_ref": d_ref,
         "n_d_inv_in_D": len(dinvs),
         "d_inv_min": min(dinvs) if dinvs else None,
@@ -286,9 +296,12 @@ def process_job(job: dict) -> dict:
         "D_crits": crits,
         "D_mean_stage_III": means_iii,
         "A_stats": stats_a,
+        "B_collisions_mean": float(np.mean(cols)) if cols.size else 0.0,
+        "B_collisions_std": float(np.std(cols, ddof=0)) if cols.size else 0.0,
         "n_agents_A": int(ansiedad.size),
         "n_runs_B": int(cols.size),
         "n_steps_C": int(j_t.size),
+        "name_suffix": name_suffix,
     }
 
 
@@ -297,12 +310,29 @@ def main() -> None:
     for job in JOBS:
         if not job["pkl"].exists():
             raise FileNotFoundError(job["pkl"])
-        reports.append(process_job(job))
-        print(f"OK: {job['escenario']}")
+        # rho=1.0 A/B/C/D already in the paper — do not overwrite those PNGs.
+        reports.append(
+            process_job(
+                job,
+                rho=RHO_EXTRA_ABC,
+                make_d=False,
+                name_suffix=SUFFIX_RHO_05,
+            )
+        )
+        print(f"OK: {job['escenario']} rho={RHO_EXTRA_ABC} suffix={SUFFIX_RHO_05}")
 
     print("\n=== REFERENCE SUMMARY ===")
     for r in reports:
         print(r)
+        a = r["A_stats"]
+        print(
+            f"  {r['escenario']} rho={r['rho_ref']} d_inv={r['d_inv_ref']:.6g} "
+            f"suffix={r['name_suffix']!r}\n"
+            f"    A: median={a['median']:.4g}  sigma+={a['sigma_plus']:.4g}  "
+            f"sigma-={a['sigma_minus']:.4g}  criterion={a['criterion']:.4g}\n"
+            f"    B: collisions mean={r['B_collisions_mean']:.4g}  "
+            f"std={r['B_collisions_std']:.4g}  (n_runs={r['n_runs_B']})"
+        )
     print(f"\nFigures in: {OUT_DIR}")
 
 

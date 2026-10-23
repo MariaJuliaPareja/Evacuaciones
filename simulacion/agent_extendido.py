@@ -22,15 +22,14 @@ class AgentExtendido:
     """
     Agente con PathSelector, A* y desbloqueo progresivo de rutas.
     
-    Sistema de desbloqueo basado en estancamiento:
-    - 0-2 pasos estancado: 1 ruta (óptima)
-    - 3-5 pasos estancado: 3 rutas alternativas
-    - 6+ pasos estancado: 5 rutas (todas las opciones)
+    Sistema de desbloqueo basado en estancamiento (calculate_unlocked_paths):
+    - 0-2 pasos estancado: 1 ruta
+    - 3-4 pasos estancado: 3 rutas
+    - 5 o más: 5 rutas
     
-    Sistema de ansiedad (Yerkes-Dodson Law):
-    - Baja ansiedad (0-30): Prefiere ruta óptima
-    - Ansiedad óptima (30-70): Balance entre rutas
-    - Alta ansiedad (70-100): Prefiere rutas alternativas
+    La elección de ruta usa U_I y U_II del agente, no los valores 30 y 70.
+    Por encima de U_II el peso sigue al inverso de la longitud y hay 10% de ruido.
+    Sin pru_fixed la ansiedad no pasa de 100.
     """
     
     # Atributos de clase para tracking global
@@ -48,6 +47,7 @@ class AgentExtendido:
         U_I: int = 10,
         U_II: int = 20,
         k_paths_max: int = 5,
+        pru_fixed: bool = False,
     ):
         """
         Inicializa un agente extendido.
@@ -88,7 +88,8 @@ class AgentExtendido:
         # SISTEMA DE ANSIEDAD (Yerkes-Dodson Law)
         self.U_I = U_I
         self.U_II = U_II
-        self.ansiedad = 0  # 0-100
+        self.ansiedad = 0
+        self.pru_fixed = pru_fixed
         self.steps_without_moving = 0
         self.calmness_threshold = 3  # Umbral para desbloquear rutas
         self.k_paths_max = max(1, min(5, k_paths_max))
@@ -189,7 +190,8 @@ class AgentExtendido:
                 path_index=self.path_index,
                 agent_positions=agent_positions,
                 steps_without_moving=self.steps_without_moving,
-                anxiety_level=None  # Ya no usar ansiedad para decidir recálculo
+                anxiety_level=None,  # Ya no usar ansiedad para decidir recálculo
+                siguiente_celda=self._celda_a_pisar() if self.pru_fixed else None,
             )
         )
         
@@ -264,6 +266,24 @@ class AgentExtendido:
         current_step = getattr(self, '_current_simulation_step', 0)
         self.last_recalculation_step = current_step
     
+    def _indice_destino(self) -> Optional[int]:
+        """Índice de la celda que el agente intenta pisar, sin mover path_index."""
+        if not self.current_path:
+            return None
+        idx = self.path_index
+        actual = (self.pos_x, self.pos_y)
+        if idx < len(self.current_path) and self.current_path[idx] == actual:
+            idx += 1
+        if idx >= len(self.current_path):
+            return None
+        return idx
+
+    def _celda_a_pisar(self) -> Optional[Tuple[int, int]]:
+        idx = self._indice_destino()
+        if idx is None:
+            return None
+        return self.current_path[idx]
+
     def proponer_movimiento(self, goal: Optional[Tuple[int, int]] = None, 
                            agent_positions: Optional[Dict[Tuple[int, int], int]] = None) -> Tuple[int, int]:
         """
@@ -307,21 +327,27 @@ class AgentExtendido:
                 return self._movimiento_greedy_floor_field()
             
             # Verificar que path_index es válido
-            if self.path_index >= len(self.current_path):
+            if self.path_index >= len(self.current_path) and not self.pru_fixed:
                 return self._movimiento_greedy_floor_field()
-            
-            # Si path_index apunta a la posición actual, avanzar al siguiente
-            pos_actual = (self.pos_x, self.pos_y)
-            if (self.path_index < len(self.current_path) and 
-                self.current_path[self.path_index] == pos_actual):
-                self.path_index += 1
-            
-            # Verificar nuevamente después del ajuste
-            if self.path_index >= len(self.current_path):
-                return self._movimiento_greedy_floor_field()
-            
-            # Retornar SIGUIENTE posición en la ruta
-            next_pos = self.current_path[self.path_index]
+
+            if self.pru_fixed:
+                # path_index no cambia aquí. La celda es la que se pisa en este paso.
+                next_pos = self._celda_a_pisar()
+                if next_pos is None:
+                    return self._movimiento_greedy_floor_field()
+            else:
+                # Si path_index apunta a la posición actual, avanzar al siguiente
+                pos_actual = (self.pos_x, self.pos_y)
+                if (self.path_index < len(self.current_path) and
+                    self.current_path[self.path_index] == pos_actual):
+                    self.path_index += 1
+
+                # Verificar nuevamente después del ajuste
+                if self.path_index >= len(self.current_path):
+                    return self._movimiento_greedy_floor_field()
+
+                # Retornar SIGUIENTE posición en la ruta
+                next_pos = self.current_path[self.path_index]
             current_step = getattr(self, '_current_simulation_step', 0)
             unlocked_count_log = self.path_selector.calculate_unlocked_paths(
                 steps_without_moving=self.steps_without_moving,
@@ -334,8 +360,8 @@ class AgentExtendido:
                 "ruta_idx": self.ruta_idx_seleccionada,
             })
             
-            # NO incrementar path_index aquí
-            # Se incrementa en mover_a() solo si el movimiento fue exitoso
+            # Sin pru_fixed, path_index ya pudo avanzar arriba si apuntaba a la celda actual.
+            # Con pru_fixed solo avanza en _mover_a_pru_fixed, tras el movimiento real.
             
             return next_pos
         else:
@@ -356,6 +382,10 @@ class AgentExtendido:
             Nueva posición propuesta
         """
         if not self.activo:
+            return
+
+        if self.pru_fixed:
+            self._mover_a_pru_fixed(nueva_x, nueva_y)
             return
         
         # Detectar si hubo cambio ANTES de actualizar posición
@@ -435,7 +465,7 @@ class AgentExtendido:
             # NO incrementar path_index
             # La ruta sigue siendo válida, simplemente no pudo avanzar este paso
             
-            # Aumentar ansiedad en una unidad por bloqueo
+            # Aumentar ansiedad en una unidad por bloqueo. Tope 100 en el modo anterior.
             self.ansiedad = min(100, self.ansiedad + 1)
         
         # Verificar si llegó a puerta (valor = 0)
@@ -450,6 +480,54 @@ class AgentExtendido:
             except (IndexError, AttributeError):
                 pass
     
+    def _subir_ansiedad(self) -> None:
+        if self.pru_fixed:
+            self.ansiedad += 1
+        else:
+            self.ansiedad = min(100, self.ansiedad + 1)
+
+    def _mover_a_pru_fixed(self, nueva_x: int, nueva_y: int) -> None:
+        """Movimiento real: sin saltos, y path_index solo si la posición cambió."""
+        old = (self.pos_x, self.pos_y)
+        new = (nueva_x, nueva_y)
+        if old != new and max(abs(new[0] - old[0]), abs(new[1] - old[1])) > 1:
+            self.if_change = False
+            self.steps_without_moving += 1
+            self._subir_ansiedad()
+            self.current_path = None
+            self.ruta_actual = []
+            self.path_index = 0
+            self.all_calculated_paths = []
+            return
+
+        idx = self._indice_destino()
+        self.if_change = old != new
+        self.pos_x = nueva_x
+        self.pos_y = nueva_y
+        if self.if_change:
+            self.steps_without_moving = 0
+            self.trajectory_history.append(new)
+            if idx is not None and self.current_path and new == self.current_path[idx]:
+                self.path_index = idx + 1
+            elif self.current_path and new in self.current_path:
+                encontrado = self.current_path.index(new)
+                if encontrado >= self.path_index:
+                    self.path_index = encontrado + 1
+            self.ansiedad = max(0, self.ansiedad - 1)
+        else:
+            self.steps_without_moving += 1
+            self._subir_ansiedad()
+
+        if self.floor_field is not None:
+            try:
+                if self.floor_field.valores[self.pos_y, self.pos_x] == 0:
+                    self.activo = False
+                    self.current_path = None
+                    self.all_calculated_paths = []
+                    self.path_index = 0
+            except (IndexError, AttributeError):
+                pass
+
     def _movimiento_greedy_floor_field(self) -> Tuple[int, int]:
         """
         Fallback: movimiento greedy tradicional usando floor field.
@@ -535,8 +613,9 @@ def mover_agentes_con_conflictos(agentes: List[AgentExtendido],
     1. Cada agente propone movimiento (proponer_movimiento)
     2. Detectar conflictos (varios → misma celda)
     3. Resolver conflictos:
-       - Prioridad: 'rapido' > 'lento'
-       - Si empate: random
+       - Gana el menor (valor de floor field de su celda actual, tipo)
+       - tipo vale 0 si es rapido y 1 si es lento
+       - Si empatan floor field y tipo: random.choice
        - Ganador: ejecuta mover_a(destino)
        - Perdedores: ejecutan mover_a(posición_actual)
     4. Registrar stats
@@ -656,6 +735,14 @@ def mover_agentes_con_conflictos(agentes: List[AgentExtendido],
             agente.mover_a(*origen)
             return False
         agente.mover_a(*dest)
+        if getattr(agente, "pru_fixed", False):
+            real = (agente.pos_x, agente.pos_y)
+            if real != origen:
+                celdas_ocupadas.discard(origen)
+                celdas_ocupadas.add(real)
+                movidos += 1
+                return True
+            return False
         if dest != origen:
             celdas_ocupadas.discard(origen)
             celdas_ocupadas.add(dest)

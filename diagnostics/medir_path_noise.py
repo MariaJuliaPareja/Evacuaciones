@@ -187,12 +187,14 @@ def restore_select(orig_select) -> None:
     PathSelector.select_path_by_anxiety = orig_select
 
 
-def run_once(esc: dict, u_i: float, semilla: int, move_fn) -> None:
+def run_once(esc: dict, u_i: float, semilla: int, move_fn, pru_fixed: bool) -> None:
     random.seed(semilla)
     np.random.seed(semilla)
     ff = Floor_field(esc["width"], esc["height"], esc["puertas"], esc["obstaculos"])
     # El barrido construye el selector con (30, 70); la eleccion usa U_I, U_II del agente.
-    selector = PathSelector(ff, umbral_recalculo=0.6, anxiety_thresholds=(30, 70))
+    selector = PathSelector(
+        ff, umbral_recalculo=0.6, anxiety_thresholds=(30, 70), pru_fixed=pru_fixed
+    )
     AgentExtendido.instances = []
     AgentExtendido.history = []
     AgentExtendido.ruta_log = []
@@ -209,6 +211,7 @@ def run_once(esc: dict, u_i: float, semilla: int, move_fn) -> None:
             y=y,
             U_I=u_i,
             U_II=2.0 * u_i,
+            pru_fixed=pru_fixed,
         )
     for step in range(MAX_PASOS):
         activos = [a for a in AgentExtendido.instances if a.activo]
@@ -224,6 +227,11 @@ def pct(num: int, den: int) -> float:
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--pru_fixed", action="store_true")
+    args = parser.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     rows = []
     for scenario, u_values in U_I_BY_SCENARIO.items():
@@ -236,7 +244,7 @@ def main() -> None:
             try:
                 for i in range(N_RUNS):
                     semilla = SEED_BASE + i + int(1_000_000 * RHO) + int(10_000 * (1.0 / u_i))
-                    run_once(esc, u_i, semilla, move_fn)
+                    run_once(esc, u_i, semilla, move_fn, args.pru_fixed)
                     print(
                         f"{scenario} U_I={u_i:.4g} {i + 1}/{N_RUNS} "
                         f"routes_bad={rec.n_routes_bad}/{rec.n_routes} "
@@ -276,7 +284,7 @@ def main() -> None:
                     "examples": " | ".join(rec.examples),
                 }
             )
-    dest = OUT / "path_noise_resumen.csv"
+    dest = OUT / ("path_noise_resumen_pru_fixed.csv" if args.pru_fixed else "path_noise_resumen.csv")
     with dest.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         writer.writeheader()

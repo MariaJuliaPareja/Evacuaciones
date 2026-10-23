@@ -10,20 +10,30 @@ import logging
 class PathSelector:
     """Selector de rutas con A*, cache y pesos dinámicos."""
     
-    def __init__(self, floor_field, umbral_recalculo=0.6, anxiety_thresholds: Tuple[int, int] = (30, 70)):
+    def __init__(
+        self,
+        floor_field,
+        umbral_recalculo=0.6,
+        anxiety_thresholds: Tuple[int, int] = (30, 70),
+        pru_fixed: bool = False,
+    ):
         """
         Parámetros:
         floor_field : Floor_field
             Campo de piso ya calculado
         umbral_recalculo : float
-            Umbral de congestión para forzar recálculo (0-1)
+            Solo lo usa debe_recalcular_ruta, que el barrido no llama.
+            elegir_ruta usa should_recalculate.
         anxiety_thresholds : Tuple[int, int]
-            Umbrales de ansiedad (mild_max, optimal_max) por defecto (30, 70)
-            Define los rangos: 0-mild_max (baja), mild_max-optimal_max (óptima), optimal_max-100 (alta)
+            Respaldo de select_path_by_anxiety si el agente no pasa umbrales.
+            El barrido pasa (U_I, U_II) del agente y no usa este par (30, 70).
+        pru_fixed : bool
+            Si es False, conserva el comportamiento anterior.
         """
         self.floor_field = floor_field
         self.umbral_recalculo = umbral_recalculo
         self.anxiety_thresholds = anxiety_thresholds
+        self.pru_fixed = pru_fixed
         
         # Crear grafo de nodos (cada celda válida = nodo)
         self.grafo = self._build_graph_from_floor_field()
@@ -232,8 +242,8 @@ class PathSelector:
     
     def calculate_heuristic(self, pos1: Tuple[int, int], pos2: Tuple[int, int]) -> float:
         """
-        Función heurística consistente para A* (distancia euclidiana).
-        Respeta los pesos del grafo: ortogonales (1.0) y diagonales (1.5).
+        Distancia euclidiana sqrt(dx**2 + dy**2).
+        No aplica los pesos 1.0 y 1.5; es admisible para esos costos.
         
         Parámetros:
         pos1 : (x, y)
@@ -246,7 +256,6 @@ class PathSelector:
         """
         dx = abs(pos1[0] - pos2[0])
         dy = abs(pos1[1] - pos2[1])
-        # Distancia euclidiana que respeta pesos del grafo
         return math.sqrt(dx**2 + dy**2)
     
     def heuristica_a_star(self, nodo: Tuple[int, int], meta: Tuple[int, int]) -> float:
@@ -646,7 +655,8 @@ class PathSelector:
     def debe_recalcular_ruta(self, agente, ruta_actual: List[Tuple[int, int]], 
                              pasos_adelante: int = 5) -> bool:
         """
-        Decide si el agente debe recalcular su ruta.
+        No la usa elegir_ruta ni el barrido. El recálculo que corre es
+        should_recalculate. Este método solo mira umbral_recalculo.
         Criterios:
         1. Ruta es None o vacía
         2. Congestión alta en próximos pasos
@@ -900,15 +910,19 @@ class PathSelector:
                           steps_without_moving: int,
                           anxiety_level: Optional[float] = None,
                           step: int = 0,
-                          agent_id=None) -> bool:
+                          agent_id=None,
+                          siguiente_celda: Optional[Tuple[int, int]] = None) -> bool:
         """
         Determina si el agente debe recalcular su ruta.
         
         Condiciones de recálculo:
-        1. Bloqueo inmediato: siguiente celda tiene >= 2 agentes
-        2. Estancamiento: steps_without_moving >= 3
-        3. Cerca del objetivo pero bloqueado: distancia < 3 y no puede avanzar
-        4. Ruta inválida: path_index >= len(current_path)
+        1. Ruta inválida: path_index >= len(current_path)
+        2. Estancamiento: steps_without_moving >= 8
+        3. Bloqueo: la celda revisada tiene >= 2 agentes
+        4. Cerca del objetivo (menos de 3 celdas) y esa celda tiene >= 1 agente
+
+        Sin siguiente_celda, la celda revisada es current_path[path_index + 1].
+        Con pru_fixed el agente pasa la celda que intenta pisar en este paso.
         
         Parámetros:
         agent_pos : (x, y)
@@ -937,10 +951,8 @@ class PathSelector:
             })
             return True
         
-        # Condición 2: Estancamiento significativo (umbral más alto para mayor persistencia)
-        # Solo recalcular si está MUY estancado (8+ pasos) para evitar recálculos innecesarios
-        # Mayor persistencia antes de reconsiderar (justificación psicológica)
-        if steps_without_moving >= 8:  # 8+ pasos (umbral más alto)
+        # Estancamiento: 8 pasos o más sin moverse.
+        if steps_without_moving >= 8:
             if anxiety_level is not None:
                 self._log_recalculation_by_anxiety(anxiety_level, 'stagnation')
             self.logger.debug(f"Recalculation triggered: stagnation (steps={steps_without_moving})")
@@ -951,9 +963,13 @@ class PathSelector:
             })
             return True
         
-        # Condición 3: Bloqueo inmediato en la siguiente celda
-        if path_index + 1 < len(current_path):
-            next_cell = current_path[path_index + 1]
+        # Bloqueo en la celda que se revisa (por defecto, la posterior a path_index).
+        if siguiente_celda is not None or path_index + 1 < len(current_path):
+            next_cell = (
+                siguiente_celda
+                if siguiente_celda is not None
+                else current_path[path_index + 1]
+            )
             agents_in_next = agent_positions.get(next_cell, 0)
             if agents_in_next >= 2:
                 if anxiety_level is not None:
@@ -973,8 +989,12 @@ class PathSelector:
             
             if distance_to_goal < 3:
                 # Verificar si puede avanzar hacia el objetivo
-                if path_index + 1 < len(current_path):
-                    next_cell = current_path[path_index + 1]
+                if siguiente_celda is not None or path_index + 1 < len(current_path):
+                    next_cell = (
+                        siguiente_celda
+                        if siguiente_celda is not None
+                        else current_path[path_index + 1]
+                    )
                     agents_in_next = agent_positions.get(next_cell, 0)
                     if agents_in_next >= 1:  # Bloqueado por al menos 1 agente
                         if anxiety_level is not None:
@@ -998,11 +1018,12 @@ class PathSelector:
     
     def _log_recalculation_by_anxiety(self, anxiety_level: float, reason: str):
         """
-        Registra una recalculación categorizada por nivel de ansiedad.
+        Registra una recalculación en tres cajas fijas: <=30, <=70 y el resto.
+        elegir_ruta pasa anxiety_level=None, así que el barrido no entra aquí.
         
         Parámetros:
         anxiety_level : float
-            Nivel de ansiedad del agente (0-100)
+            Valor usado solo por este registro, con cortes 30 y 70.
         reason : str
             Razón de la recalculación
         """
@@ -1153,7 +1174,20 @@ class PathSelector:
                 new_pos = (current[0] + variation[0], current[1] + variation[1])
                 
                 # Verificar que la nueva posición es válida en el grafo
-                if new_pos in self.grafo and new_pos != noisy_path[-1]:
+                prev = noisy_path[-1]
+                nxt = path[i + 1]
+                if self.pru_fixed:
+                    vecina_prev = max(abs(new_pos[0] - prev[0]), abs(new_pos[1] - prev[1])) == 1
+                    vecina_nxt = max(abs(new_pos[0] - nxt[0]), abs(new_pos[1] - nxt[1])) == 1
+                    aceptada = (
+                        vecina_prev
+                        and vecina_nxt
+                        and self.grafo.has_edge(prev, new_pos)
+                        and self.grafo.has_edge(new_pos, nxt)
+                    )
+                else:
+                    aceptada = new_pos in self.grafo and new_pos != prev
+                if aceptada:
                     noisy_path.append(new_pos)
                 else:
                     # Si no es válida, mantener posición original
@@ -1174,18 +1208,20 @@ class PathSelector:
         """
         Selecciona una ruta de k_paths basándose en el nivel de ansiedad del agente.
         
-        Lógica de selección:
-        - Baja ansiedad (0-30): Siempre ruta óptima
-        - Ansiedad óptima (30-70): 70% óptima, 20% media, 10% subóptima
-        - Alta ansiedad/Pánico (70-100): 30% óptima, 30% media, 40% subóptima
-          + 10% probabilidad de añadir ruido (movimientos erráticos)
+        Lógica de selección, con los umbrales que recibe (en el barrido, U_I y U_II):
+        - ansiedad <= umbral bajo: siempre la primera ruta
+        - entre los dos umbrales: pesos [0.7, 0.2, 0.1] si hay 3 rutas,
+          o [0.5, 0.2, 0.15, 0.1, 0.05] si hay 5
+        - por encima del segundo umbral: peso proporcional al inverso de la
+          longitud, y 10% de probabilidad de _add_path_noise
+        Sin pru_fixed la ansiedad se recorta a 100 antes de comparar.
         
         Parámetros:
         k_paths : List[List[(x,y)]]
             Lista con rutas alternativas [óptima, media, subóptima, ...]
             Puede tener 1, 3, o 5 rutas dependiendo del desbloqueo progresivo
         anxiety_level : float
-            Nivel de ansiedad del agente (0-100)
+            Nivel de ansiedad del agente. Sin pru_fixed se recorta a 100.
         anxiety_thresholds : Tuple[int, int], opcional
             Umbrales de ansiedad (mild_max, optimal_max). Si None, usa self.anxiety_thresholds
         num_available_paths : int, opcional
@@ -1218,8 +1254,11 @@ class PathSelector:
         while len(available_paths) < 3 and len(available_paths) < len(k_paths):
             available_paths.append(available_paths[0] if available_paths else k_paths[0])
         
-        # Limitar ansiedad al rango válido
-        anxiety_level = max(0.0, min(100.0, anxiety_level))
+        # Sin pru_fixed la ansiedad queda en [0, 100]. Con el flag solo hay mínimo 0.
+        if self.pru_fixed:
+            anxiety_level = max(0.0, float(anxiety_level))
+        else:
+            anxiety_level = max(0.0, min(100.0, anxiety_level))
         
         selected_path = None
         selection_reason = ""

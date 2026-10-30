@@ -5,6 +5,8 @@ from __future__ import annotations
 import random
 from typing import Iterable
 
+from simulacion.colisiones import anotar
+
 
 class Agente:
     """Agente basico con dinamica de stress Yerkes-Dodson."""
@@ -18,6 +20,7 @@ class Agente:
         U_II: int = 20,
         ramirez2021: bool = False,
         stress_inicial: int = 0,
+        frozen_stress: bool = False,
     ):
         self.x = x
         self.y = y
@@ -30,6 +33,8 @@ class Agente:
         self.U_II: int = U_II
         self.stress: int = stress_inicial
         self.ramirez2021 = ramirez2021
+        # Solo el PFF corregido consulta este flag, al cerrar el paso.
+        self.frozen_stress = frozen_stress
 
     def _vecinas_8(self) -> list[tuple[int, int]]:
         """Retorna vecinas validas (8 direcciones) dentro del mapa."""
@@ -165,16 +170,22 @@ class Agente:
 
 
 def _aplicar_stress_ramirez2021(agente: Agente, x0: int, y0: int) -> None:
-    """+1 si no se movio, -1 si se movio. El minimo es 0."""
-    if (agente.x, agente.y) != (x0, y0):
+    """+1 si no se movio, -1 si se movio. El minimo es 0.
+
+    Con frozen_stress, s_i queda en el valor inicial. if_change sigue
+    reflejando si el agente cambio de celda.
+    """
+    se_movio = (agente.x, agente.y) != (x0, y0)
+    agente.if_change = se_movio
+    if agente.frozen_stress:
+        return
+    if se_movio:
         agente.stress = max(0, agente.stress - 1)
-        agente.if_change = True
     else:
         agente.stress += 1
-        agente.if_change = False
 
 
-def _mover_agentes_ramirez2021(agentes) -> int:
+def _mover_agentes_ramirez2021(agentes, registro=None) -> int:
     """Conflictos al azar. El estres se actualiza con el movimiento real."""
     ocupadas = {(a.x, a.y) for a in agentes if a.activo}
     propuestas = {}
@@ -194,6 +205,7 @@ def _mover_agentes_ramirez2021(agentes) -> int:
         else:
             conflictos += 1
             ganador = random.choice(candidatos)
+            anotar(registro, candidatos, ganador, lambda agente: agente.stress)
         for agente in candidatos:
             x0, y0 = agente.x, agente.y
             if agente is ganador:
@@ -202,12 +214,12 @@ def _mover_agentes_ramirez2021(agentes) -> int:
     return conflictos
 
 
-def mover_agentes(agentes) -> int:
+def mover_agentes(agentes, registro=None) -> int:
     """Mueve agentes activos con resolucion simple de conflictos."""
     if agentes and any(getattr(a, "ramirez2021", False) for a in agentes):
         if not all(getattr(a, "ramirez2021", False) for a in agentes):
             raise ValueError("No mezclar agentes ramirez2021 con el motor PFF anterior")
-        return _mover_agentes_ramirez2021(agentes)
+        return _mover_agentes_ramirez2021(agentes, registro)
     ocupadas = {(a.x, a.y) for a in agentes if a.activo}
     propuestas = {}
 
@@ -227,5 +239,6 @@ def mover_agentes(agentes) -> int:
         else:
             conflictos += 1
             ganador = random.choice(candidatos)
+            anotar(registro, candidatos, ganador, lambda agente: agente.stress)
             ganador.mover_a(destino[0], destino[1])
     return conflictos

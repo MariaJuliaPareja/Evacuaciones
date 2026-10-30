@@ -17,6 +17,8 @@ import random
 from types import SimpleNamespace
 from typing import Tuple, Optional, Dict, List
 
+from simulacion.colisiones import anotar
+
 
 class AgentExtendido:
     """
@@ -48,6 +50,7 @@ class AgentExtendido:
         U_II: int = 20,
         k_paths_max: int = 5,
         pru_fixed: bool = False,
+        frozen_stress: bool = False,
     ):
         """
         Inicializa un agente extendido.
@@ -90,6 +93,8 @@ class AgentExtendido:
         self.U_II = U_II
         self.ansiedad = 0
         self.pru_fixed = pru_fixed
+        # Congela solo s_i. steps_without_moving y el desbloqueo 1→3→5 siguen.
+        self.frozen_stress = frozen_stress
         self.steps_without_moving = 0
         self.calmness_threshold = 3  # Umbral para desbloquear rutas
         self.k_paths_max = max(1, min(5, k_paths_max))
@@ -481,6 +486,8 @@ class AgentExtendido:
                 pass
     
     def _subir_ansiedad(self) -> None:
+        if self.frozen_stress:
+            return
         if self.pru_fixed:
             self.ansiedad += 1
         else:
@@ -513,7 +520,8 @@ class AgentExtendido:
                 encontrado = self.current_path.index(new)
                 if encontrado >= self.path_index:
                     self.path_index = encontrado + 1
-            self.ansiedad = max(0, self.ansiedad - 1)
+            if not self.frozen_stress:
+                self.ansiedad = max(0, self.ansiedad - 1)
         else:
             self.steps_without_moving += 1
             self._subir_ansiedad()
@@ -605,7 +613,8 @@ class AgentExtendido:
 
 
 def mover_agentes_con_conflictos(agentes: List[AgentExtendido], 
-                                 goals: Optional[Dict[int, Tuple[int, int]]] = None) -> Dict:
+                                 goals: Optional[Dict[int, Tuple[int, int]]] = None,
+                                 registro=None) -> Dict:
     """
     Mueve todos los agentes resolviendo conflictos.
     
@@ -783,6 +792,7 @@ def mover_agentes_con_conflictos(agentes: List[AgentExtendido],
         conflictos_totales += 1
 
         if not elegibles:
+            anotar(registro, grupo, None, lambda agente: agente.ansiedad)
             for agente in grupo:
                 agente.mover_a(agente.pos_x, agente.pos_y)
                 agente.conflictos_totales += 1
@@ -792,6 +802,7 @@ def mover_agentes_con_conflictos(agentes: List[AgentExtendido],
 
         ganador = _elegir_ganador(elegibles)
         perdedores = [a for a in grupo if a.id != ganador.id]
+        anotar(registro, grupo, ganador, lambda agente: agente.ansiedad)
 
         if ganador.tipo == "rapido" and any(p.tipo == "lento" for p in perdedores):
             conflictos_rapido_gana += 1

@@ -1,4 +1,6 @@
-"""<T> versus U_I for PFF, Greedy-4, Greedy-8, A* and PRU.
+"""<T> versus U_I for PFF, Greedy-4, A* and PRU.
+# [CAMBIO] AgenteGreedy8 retirado: usaba la regla antigua
+# [CAMBIO] antes: la curva Greedy-8 salía en la figura -> ahora: esa serie no se dibuja ni se compara
 
 Reads tabla_metodos_barrido_completo.csv. Does not resimulate.
 
@@ -25,22 +27,20 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "figures" / "out"
 N = 100
 RHOS = (0.25, 0.5, 0.75, 1.0)
-ORDER = ("pff", "greedy4", "greedy8", "astar", "pru")
+ORDER = ("pff", "greedy4", "astar", "pru")
 LABELS = {
     "pff": "PFF",
     "greedy4": "Greedy-4",
-    "greedy8": "Greedy-8",
     "astar": "A*",
     "pru": "PRU",
 }
 COLORS = {
     "pff": "#1f77b4",
     "greedy4": "#2ca02c",
-    "greedy8": "#98df8a",
     "astar": "#9467bd",
     "pru": "#d62728",
 }
-COMPARE = ("astar", "greedy4", "greedy8", "pff")
+COMPARE = ("astar", "greedy4", "pff")
 
 
 def apply_style() -> None:
@@ -173,7 +173,7 @@ def main() -> None:
         handles,
         labels,
         loc="lower center",
-        ncol=5,
+        ncol=4,
         frameon=False,
         bbox_to_anchor=(0.5, 0.005),
     )

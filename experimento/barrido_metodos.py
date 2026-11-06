@@ -1,4 +1,6 @@
-"""Greedy (4 and 8 neighbors) and A* without unlocking, pru_fixed=True.
+"""Greedy de 4 vecinos y A* sin desbloqueo, pru_fixed=True.
+# [CAMBIO] AgenteGreedy8 retirado: usaba la regla antigua
+# [CAMBIO] antes: el barrido ofrecía greedy8 -> ahora: solo greedy4 y astar
 
 Same seeds as experimento/barrido_pru_fixed.py. Does not modify the motors
 and does not overwrite the existing PFF or PRU tables. Those two methods are
@@ -41,42 +43,8 @@ from simulacion.grilla.floor_field import Floor_field  # noqa: E402
 from simulacion.nodos.path_selector import PathSelector  # noqa: E402
 
 OUT_DIR = ROOT / "experimento" / "out"
-DIRS8 = (
-    (-1, -1),
-    (0, -1),
-    (1, -1),
-    (-1, 0),
-    (1, 0),
-    (-1, 1),
-    (0, 1),
-    (1, 1),
-)
-
-
-class AgenteGreedy8(AgentExtendido):
-    """Same greedy rule as AgentExtendido, with the 8-cell neighborhood."""
-
-    def _movimiento_greedy_floor_field(self):
-        if self.floor_field is None:
-            return (self.pos_x, self.pos_y)
-        try:
-            mejor_valor = self.floor_field.valores[self.pos_y, self.pos_x]
-        except (IndexError, AttributeError):
-            return (self.pos_x, self.pos_y)
-        mejor_pos = (self.pos_x, self.pos_y)
-        for dx, dy in DIRS8:
-            nx = self.pos_x + dx
-            ny = self.pos_y + dy
-            if not (0 <= nx < self.floor_field.width and 0 <= ny < self.floor_field.height):
-                continue
-            try:
-                valor = self.floor_field.valores[ny, nx]
-            except (IndexError, AttributeError):
-                continue
-            if valor < 500 and valor < mejor_valor:
-                mejor_valor = valor
-                mejor_pos = (nx, ny)
-        return mejor_pos
+# [CAMBIO] AgenteGreedy8 retirado: usaba la regla antigua
+# [CAMBIO] antes: AgenteGreedy8 repetía el greedy viejo con 8 vecinos -> ahora: esa clase no existe
 
 
 def load_scenario(name: str) -> dict[str, Any]:
@@ -107,13 +75,10 @@ def simular(esc, rho: float, d_inv: float, semilla: int, method: str) -> list[di
     sembrar_corrida(semilla)
     ff = Floor_field(esc["width"], esc["height"], esc["puertas"], esc["obstaculos"])
     selector = None
-    clase = AgentExtendido
     k_paths = 5
     if method == "astar":
         selector = PathSelector(ff, umbral_recalculo=0.6, anxiety_thresholds=(30, 70), pru_fixed=True)
         k_paths = 1
-    elif method == "greedy8":
-        clase = AgenteGreedy8
     elif method != "greedy4":
         raise ValueError(method)
     AgentExtendido.instances = []
@@ -125,7 +90,7 @@ def simular(esc, rho: float, d_inv: float, semilla: int, method: str) -> list[di
     )
     u_i = 1.0 / d_inv
     for x, y in posiciones:
-        clase(
+        AgentExtendido(
             agent_type="rapido",
             floor_field=ff,
             path_selector=selector,
@@ -224,9 +189,9 @@ def _leer(path: Path) -> list[dict]:
 def combinar() -> None:
     filas = []
     for scenario in ("sala_de_clases", "avion_dos_puertas"):
+        # [CAMBIO] antes: combinar leía el parcial de greedy8 -> ahora: ese método no entra en la tabla
         fuentes = {
             "greedy4": destino_parcial(scenario, "greedy4"),
-            "greedy8": destino_parcial(scenario, "greedy8"),
             "astar": destino_parcial(scenario, "astar"),
             "pru": ROOT / f"tabla_{scenario}_pru_fixed.csv",
             "pff": ROOT / f"tabla_{scenario}_pff_ramirez2021_seeded.csv",
@@ -257,7 +222,7 @@ def combinar() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scenario", choices=["sala_de_clases", "avion_dos_puertas"])
-    parser.add_argument("--method", choices=["greedy4", "greedy8", "astar"])
+    parser.add_argument("--method", choices=["greedy4", "astar"])
     parser.add_argument("--n_sims", type=int, default=N_SIMS)
     parser.add_argument("--combine", action="store_true")
     args = parser.parse_args()

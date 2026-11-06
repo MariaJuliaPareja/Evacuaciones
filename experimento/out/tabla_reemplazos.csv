@@ -1,0 +1,7 @@
+escenario,etapa,pasos_con_celda_de_ruta,pct_conservada,pct_reemplazada,desglose,ocupada,subiria,no_minimo_libre,no_vecina,no_minimo_absoluto
+sala_de_clases,I,386,25.38860103626943,74.61139896373057,ocupada=91 subiria=45 no_minimo_libre=0 no_vecina=57 no_minimo_absoluto=95,91,45,0,57,95
+sala_de_clases,II,17,94.11764705882354,5.882352941176471,ocupada=1 subiria=0 no_minimo_libre=0 no_vecina=0 no_minimo_absoluto=0,1,0,0,0,0
+sala_de_clases,III,0,0.0,0.0,ocupada=0 subiria=0 no_minimo_libre=0 no_vecina=0 no_minimo_absoluto=0,0,0,0,0,0
+avion_dos_puertas,I,1744,38.18807339449541,61.81192660550459,ocupada=1057 subiria=21 no_minimo_libre=0 no_vecina=0 no_minimo_absoluto=0,1057,21,0,0,0
+avion_dos_puertas,II,1872,29.38034188034188,70.61965811965813,ocupada=1168 subiria=32 no_minimo_libre=0 no_vecina=122 no_minimo_absoluto=0,1168,32,0,122,0
+avion_dos_puertas,III,1030,28.54368932038835,71.45631067961165,ocupada=617 subiria=0 no_minimo_libre=51 no_vecina=68 no_minimo_absoluto=0,617,0,51,68,0

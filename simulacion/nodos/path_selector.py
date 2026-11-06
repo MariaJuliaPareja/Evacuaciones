@@ -1124,6 +1124,7 @@ class PathSelector:
         return self.encontrar_ruta_a_star(start, goal, usar_cache=True)
     
     def _add_path_noise(self, path: List[Tuple[int, int]], noise_probability: float = 0.15) -> List[Tuple[int, int]]:
+        # [AUDITORÍA REGLAS PFF] NO APLICA — no elige el paso por φ. Sin pru_fixed acepta una celda del grafo aunque no sea vecina; con pru_fixed exige Chebyshev 1 y las dos aristas. No se cambia: el paso real lo filtra la regla de etapa.
         """
         Añade pequeñas desviaciones a la ruta simulando comportamiento errático en pánico.
         Mantiene la dirección general pero introduce variaciones aleatorias.
@@ -1176,6 +1177,7 @@ class PathSelector:
                 # Verificar que la nueva posición es válida en el grafo
                 prev = noisy_path[-1]
                 nxt = path[i + 1]
+                # [AUDITORÍA REGLAS PFF] CUMPLE — con pru_fixed solo entra una celda vecina de ambos extremos
                 if self.pru_fixed:
                     vecina_prev = max(abs(new_pos[0] - prev[0]), abs(new_pos[1] - prev[1])) == 1
                     vecina_nxt = max(abs(new_pos[0] - nxt[0]), abs(new_pos[1] - nxt[1])) == 1
@@ -1186,6 +1188,7 @@ class PathSelector:
                         and self.grafo.has_edge(new_pos, nxt)
                     )
                 else:
+                    # [AUDITORÍA REGLAS PFF] NO APLICA — sin pru_fixed basta con estar en el grafo, así que el salto puede no ser vecino. No se cambia.
                     aceptada = new_pos in self.grafo and new_pos != prev
                 if aceptada:
                     noisy_path.append(new_pos)
@@ -1205,6 +1208,7 @@ class PathSelector:
                                anxiety_level: float,
                                anxiety_thresholds: Optional[Tuple[int, int]] = None,
                                num_available_paths: Optional[int] = None) -> List[Tuple[int, int]]:
+        # [AUDITORÍA REGLAS PFF] NO APLICA — el estrés pondera rutas enteras, no una celda por φ. Reglas 1, 2 y 3 no gobiernan este sorteo.
         """
         Selecciona una ruta de k_paths basándose en el nivel de ansiedad del agente.
         

@@ -33,7 +33,7 @@ def _agente(ff, x, y, fijo=True, selector=None):
 def _silenciar_recalculo(agente):
     agente.last_recalculation_step = 0
     agente._current_simulation_step = 0
-    agente.current_path = [(2, 2), (3, 2), (4, 2), (5, 2)]
+    agente.current_path = [(2, 2), (1, 3), (0, 4)]
     agente.path_index = 0
 
 
@@ -80,22 +80,22 @@ def test_path_index_avanza_solo_tras_el_movimiento_real():
     agente = _agente(ff, 2, 2, selector=selector)
     _silenciar_recalculo(agente)
 
-    assert agente.proponer_movimiento((0, 4), {}) == (3, 2)
+    assert agente.proponer_movimiento((0, 4), {}) == (1, 3)
     assert agente.path_index == 0
-    agente.mover_a(3, 2)
-    assert (agente.pos_x, agente.pos_y) == (3, 2)
+    agente.mover_a(1, 3)
+    assert (agente.pos_x, agente.pos_y) == (1, 3)
     assert agente.path_index == 2
 
     agente._current_simulation_step = 1
     agente.last_recalculation_step = 1
-    assert agente.proponer_movimiento((0, 4), {}) == (4, 2)
-    agente.mover_a(3, 2)
+    assert agente.proponer_movimiento((0, 4), {}) == (0, 4)
+    agente.mover_a(1, 3)
     assert agente.path_index == 2
-    assert (agente.pos_x, agente.pos_y) == (3, 2)
+    assert (agente.pos_x, agente.pos_y) == (1, 3)
 
     agente._current_simulation_step = 2
     agente.last_recalculation_step = 2
-    assert agente.proponer_movimiento((0, 4), {}) == (4, 2)
+    assert agente.proponer_movimiento((0, 4), {}) == (0, 4)
 
 
 def test_recalculo_mira_la_celda_que_intenta_pisar():

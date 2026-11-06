@@ -18,6 +18,50 @@ from types import SimpleNamespace
 from typing import Tuple, Optional, Dict, List
 
 from simulacion.colisiones import anotar
+from simulacion.reglas_etapa import candidatas, clasificar_rechazo, etapa_de, proponer_destino
+
+
+class ContadorReemplazos:
+    """Conteo de la celda de ruta A*. Sumar enteros no llama al azar."""
+
+    CAUSAS = (
+        "ocupada",
+        "subiria",
+        "no_minimo_libre",
+        "no_vecina",
+        "no_minimo_absoluto",
+    )
+
+    def __init__(self) -> None:
+        self.pasos_con_ruta = {1: 0, 2: 0, 3: 0}
+        self.conservada = {1: 0, 2: 0, 3: 0}
+        self.reemplazada = {1: 0, 2: 0, 3: 0}
+        self.causas = {etapa: {causa: 0 for causa in self.CAUSAS} for etapa in (1, 2, 3)}
+
+    def anotar(self, etapa: int, causa: Optional[str]) -> None:
+        self.pasos_con_ruta[etapa] += 1
+        if causa is None:
+            self.conservada[etapa] += 1
+            return
+        self.reemplazada[etapa] += 1
+        self.causas[etapa][causa] += 1
+
+    def sumar(self, otro: "ContadorReemplazos") -> None:
+        for etapa in (1, 2, 3):
+            self.pasos_con_ruta[etapa] += otro.pasos_con_ruta[etapa]
+            self.conservada[etapa] += otro.conservada[etapa]
+            self.reemplazada[etapa] += otro.reemplazada[etapa]
+            for causa in self.CAUSAS:
+                self.causas[etapa][causa] += otro.causas[etapa][causa]
+
+
+def sumar_reemplazos(agentes) -> ContadorReemplazos:
+    total = ContadorReemplazos()
+    for agente in agentes:
+        contador = getattr(agente, "reemplazos", None)
+        if contador is not None:
+            total.sumar(contador)
+    return total
 
 
 class AgentExtendido:
@@ -51,6 +95,8 @@ class AgentExtendido:
         k_paths_max: int = 5,
         pru_fixed: bool = False,
         frozen_stress: bool = False,
+        reglas_etapa_en_pru: bool = True,
+        contar_reemplazos: bool = True,
     ):
         """
         Inicializa un agente extendido.
@@ -93,6 +139,11 @@ class AgentExtendido:
         self.U_II = U_II
         self.ansiedad = 0
         self.pru_fixed = pru_fixed
+        # [CAMBIO] antes: el paso celda a celda de PRU siempre filtraba la ruta con la regla de etapa -> ahora: reglas_etapa_en_pru=False devuelve esa celda o el greedy de 4 vecinos; las corridas oficiales dejan True
+        self.reglas_etapa_en_pru = reglas_etapa_en_pru
+        # [CAMBIO] antes: no había conteo de reemplazos -> ahora: contar_reemplazos anota por etapa sin consumir números aleatorios
+        self.contar_reemplazos = contar_reemplazos
+        self.reemplazos = ContadorReemplazos()
         # Congela solo s_i. steps_without_moving y el desbloqueo 1→3→5 siguen.
         self.frozen_stress = frozen_stress
         self.steps_without_moving = 0
@@ -244,7 +295,7 @@ class AgentExtendido:
             # No se encontraron rutas, mantener la actual si existe
             return
         
-        # Seleccionar ruta según ansiedad
+        # [AUDITORÍA REGLAS PFF] NO APLICA — el estrés elige la ruta A*, no la celda vecina por φ
         selected_path = self.path_selector.select_path_by_anxiety(
             k_paths=all_paths,
             anxiety_level=self.ansiedad,
@@ -284,10 +335,53 @@ class AgentExtendido:
         return idx
 
     def _celda_a_pisar(self) -> Optional[Tuple[int, int]]:
+        # [AUDITORÍA REGLAS PFF] NO APLICA — nombra la celda de la ruta; la etapa la acepta o la reemplaza en _aplicar_regla_de_etapa
         idx = self._indice_destino()
         if idx is None:
             return None
         return self.current_path[idx]
+
+    def _conjunto_ocupadas(self, agent_positions) -> set[tuple[int, int]]:
+        ocupadas: set[tuple[int, int]] = set()
+        if not agent_positions:
+            return ocupadas
+        for pos, info in agent_positions.items():
+            cantidad = len(info) if isinstance(info, (list, tuple, set)) else info
+            try:
+                cantidad = int(cantidad)
+            except (TypeError, ValueError):
+                cantidad = 1
+            if cantidad > 0:
+                ocupadas.add((int(pos[0]), int(pos[1])))
+        return ocupadas
+
+    def _aplicar_regla_de_etapa(
+        self,
+        siguiente: Optional[Tuple[int, int]],
+        agent_positions,
+    ) -> Tuple[int, int]:
+        """Acepta la celda de la ruta solo si la etapa la permite."""
+        x, y = int(self.pos_x), int(self.pos_y)
+        if self.floor_field is None:
+            return (int(siguiente[0]), int(siguiente[1])) if siguiente is not None else (x, y)
+        phi = self.floor_field.valores
+        ocupadas = self._conjunto_ocupadas(agent_positions)
+        etapa = etapa_de(self.ansiedad, self.U_I, self.U_II)
+        # [AUDITORÍA REGLAS PFF] CORREGIDO — reglas 1, 2 y 3: la ruta solo pasa si es candidata legal
+        # [CAMBIO] antes: se pisaba la siguiente celda de la ruta, o el greedy de 4 vecinos, sin mirar la etapa ni si esa celda era el mínimo -> ahora: si la celda no es candidata (ocupada, cuesta arriba en I/II, o no es el mínimo libre en III) se usa proponer_destino
+        # [DUDA] si la celda de la ruta es una candidata legal, PRU la conserva y no sortea; el azar de la etapa II queda dentro de proponer_destino
+        # [DUDA] una celda de ruta igual a la posición actual se cuenta como conservada
+        if siguiente is not None:
+            celda = (int(siguiente[0]), int(siguiente[1]))
+            opciones = candidatas(phi, ocupadas, x, y, etapa)
+            aceptada = celda == (x, y) or celda in opciones
+            if self.contar_reemplazos:
+                # [CAMBIO] antes: el reemplazo no se anotaba -> ahora: se anota la causa sin llamar a random
+                causa = None if aceptada else clasificar_rechazo(phi, ocupadas, x, y, etapa, celda)
+                self.reemplazos.anotar(etapa, causa)
+            if aceptada:
+                return celda
+        return proponer_destino(phi, ocupadas, x, y, etapa)
 
     def proponer_movimiento(self, goal: Optional[Tuple[int, int]] = None, 
                            agent_positions: Optional[Dict[Tuple[int, int], int]] = None) -> Tuple[int, int]:
@@ -311,67 +405,48 @@ class AgentExtendido:
         """
         if not self.activo or self.pos_x is None or self.pos_y is None:
             return (self.pos_x, self.pos_y)
-        
+
+        siguiente = None
         if self.usa_enrutamiento_inteligente and self.path_selector is not None:
-            # Obtener agent_positions si no se proveyó
             if agent_positions is None:
                 agent_positions = {}
-            
-            # Obtener goal si no se proveyó
             if goal is None:
                 goal = self._encontrar_puerta_mas_cercana()
-            
-            if goal is None:
-                return self._movimiento_greedy_floor_field()
-            
-            # Elegir/recalcular ruta (solo si es necesario)
-            self.elegir_ruta(goal, agent_positions)
-            
-            # Verificar que tenemos ruta válida
-            if self.current_path is None or len(self.current_path) == 0:
-                return self._movimiento_greedy_floor_field()
-            
-            # Verificar que path_index es válido
-            if self.path_index >= len(self.current_path) and not self.pru_fixed:
-                return self._movimiento_greedy_floor_field()
-
-            if self.pru_fixed:
-                # path_index no cambia aquí. La celda es la que se pisa en este paso.
-                next_pos = self._celda_a_pisar()
-                if next_pos is None:
-                    return self._movimiento_greedy_floor_field()
-            else:
-                # Si path_index apunta a la posición actual, avanzar al siguiente
-                pos_actual = (self.pos_x, self.pos_y)
-                if (self.path_index < len(self.current_path) and
-                    self.current_path[self.path_index] == pos_actual):
-                    self.path_index += 1
-
-                # Verificar nuevamente después del ajuste
-                if self.path_index >= len(self.current_path):
-                    return self._movimiento_greedy_floor_field()
-
-                # Retornar SIGUIENTE posición en la ruta
-                next_pos = self.current_path[self.path_index]
-            current_step = getattr(self, '_current_simulation_step', 0)
-            unlocked_count_log = self.path_selector.calculate_unlocked_paths(
-                steps_without_moving=self.steps_without_moving,
-                calmness_threshold=self.calmness_threshold
-            )
-            AgentExtendido.ruta_log.append({
-                "agent_id": id(self),
-                "step": current_step,
-                "unlocked_count": unlocked_count_log,
-                "ruta_idx": self.ruta_idx_seleccionada,
-            })
-            
-            # Sin pru_fixed, path_index ya pudo avanzar arriba si apuntaba a la celda actual.
-            # Con pru_fixed solo avanza en _mover_a_pru_fixed, tras el movimiento real.
-            
-            return next_pos
-        else:
-            # No usa PathSelector, usar greedy tradicional
-            return self._movimiento_greedy_floor_field()
+            if goal is not None:
+                self.elegir_ruta(goal, agent_positions)
+                ruta_usable = (
+                    self.current_path is not None
+                    and len(self.current_path) > 0
+                    and not (self.path_index >= len(self.current_path) and not self.pru_fixed)
+                )
+                if ruta_usable:
+                    if self.pru_fixed:
+                        siguiente = self._celda_a_pisar()
+                    else:
+                        pos_actual = (self.pos_x, self.pos_y)
+                        if (
+                            self.path_index < len(self.current_path)
+                            and self.current_path[self.path_index] == pos_actual
+                        ):
+                            self.path_index += 1
+                        if self.path_index < len(self.current_path):
+                            siguiente = self.current_path[self.path_index]
+                    if siguiente is not None:
+                        current_step = getattr(self, "_current_simulation_step", 0)
+                        unlocked_count_log = self.path_selector.calculate_unlocked_paths(
+                            steps_without_moving=self.steps_without_moving,
+                            calmness_threshold=self.calmness_threshold,
+                        )
+                        AgentExtendido.ruta_log.append({
+                            "agent_id": id(self),
+                            "step": current_step,
+                            "unlocked_count": unlocked_count_log,
+                            "ruta_idx": self.ruta_idx_seleccionada,
+                        })
+        # [CAMBIO] antes: el paso siempre pasaba por la regla de etapa -> ahora: con reglas_etapa_en_pru=False se devuelve la celda de la ruta o el greedy de 4 vecinos
+        if not self.reglas_etapa_en_pru:
+            return self._paso_sin_regla_de_etapa(siguiente)
+        return self._aplicar_regla_de_etapa(siguiente, agent_positions)
     
     def mover_a(self, nueva_x: int, nueva_y: int):
         """
@@ -536,54 +611,45 @@ class AgentExtendido:
             except (IndexError, AttributeError):
                 pass
 
-    def _movimiento_greedy_floor_field(self) -> Tuple[int, int]:
-        """
-        Fallback: movimiento greedy tradicional usando floor field.
-        
-        Usar cuando:
-        - No hay PathSelector
-        - Falla el pathfinding
-        - Modo de emergencia
-        
-        Lógica: Moverse al vecino con menor valor de floor_field (más cerca de la puerta).
-        
-        Returns:
-        Tuple[int, int]
-            Posición propuesta (x, y)
-        """
-        if self.floor_field is None:
-            # Sin floor_field, quedarse en su lugar
+    def _paso_sin_regla_de_etapa(self, siguiente: Optional[Tuple[int, int]]) -> Tuple[int, int]:
+        # [CAMBIO] antes: no existía el paso previo como alternativa -> ahora: la celda de la ruta se pisa tal cual y, si no hay, el greedy de 4 vecinos
+        if siguiente is not None:
+            return (int(siguiente[0]), int(siguiente[1]))
+        return self._greedy_4_anterior()
+
+    def _greedy_4_anterior(self) -> Tuple[int, int]:
+        """Respaldo de antes de la regla de etapa: 4 vecinos y solo si φ baja."""
+        # [CAMBIO] antes: este era el respaldo de todas las corridas -> ahora: solo corre si reglas_etapa_en_pru es False
+        if self.floor_field is None or self.pos_x is None or self.pos_y is None:
             return (self.pos_x, self.pos_y)
-        
-        # Obtener valor actual
         try:
             mejor_valor = self.floor_field.valores[self.pos_y, self.pos_x]
         except (IndexError, AttributeError):
             return (self.pos_x, self.pos_y)
-        
         mejor_pos = (self.pos_x, self.pos_y)
-        
-        # Revisar vecinos (4 direcciones: N, S, E, O)
-        direcciones = [(0, 1), (1, 0), (0, -1), (-1, 0)]
-        
-        for dx, dy in direcciones:
+        for dx, dy in ((0, 1), (1, 0), (0, -1), (-1, 0)):
             nx = self.pos_x + dx
             ny = self.pos_y + dy
-            
-            # Verificar límites
-            if (0 <= nx < self.floor_field.width and 
-                0 <= ny < self.floor_field.height):
-                try:
-                    v = self.floor_field.valores[ny, nx]
-                    # Valor válido: < 500 (no es obstáculo)
-                    # Preferir valores menores (más cerca de puerta)
-                    if v < 500 and v < mejor_valor:
-                        mejor_valor = v
-                        mejor_pos = (nx, ny)
-                except (IndexError, AttributeError):
-                    continue
-        
+            if not (0 <= nx < self.floor_field.width and 0 <= ny < self.floor_field.height):
+                continue
+            try:
+                valor = self.floor_field.valores[ny, nx]
+            except (IndexError, AttributeError):
+                continue
+            if valor < 500 and valor < mejor_valor:
+                mejor_valor = valor
+                mejor_pos = (nx, ny)
         return mejor_pos
+
+    def _movimiento_greedy_floor_field(self) -> Tuple[int, int]:
+        """Respaldo sin ruta. Con la regla de etapa usa el mismo criterio que el PFF."""
+        if self.floor_field is None or self.pos_x is None or self.pos_y is None:
+            return (self.pos_x, self.pos_y)
+        # [AUDITORÍA REGLAS PFF] CORREGIDO — reglas 1, 2 y 3: el respaldo ya no es el mínimo de 4 vecinos
+        # [CAMBIO] antes: 4 vecinos, solo si φ bajaba, sin mirar ocupación ni etapa -> ahora: proponer_destino con 8 vecinos, salvo reglas_etapa_en_pru=False
+        if not self.reglas_etapa_en_pru:
+            return self._greedy_4_anterior()
+        return self._aplicar_regla_de_etapa(None, None)
     
     def _encontrar_puerta_mas_cercana(self) -> Optional[Tuple[int, int]]:
         """
@@ -693,6 +759,7 @@ def mover_agentes_con_conflictos(agentes: List[AgentExtendido],
             destinos_agentes[destino] = []
         destinos_agentes[destino].append(agente_id)
     
+    # [AUDITORÍA REGLAS PFF] NO APLICA — no elige la celda por φ. El perdedor llama mover_a sobre su propia celda y, con pru_fixed, sube 1 de ansiedad. No se cambia la prioridad del ganador.
     # Paso 3: Resolver conflictos y mover, con ocupación compartida del frame.
     # celdas_ocupadas se actualiza al resolver cada grupo para evitar que un
     # agente entre a la celda de otro que perdió un conflicto distinto y se quedó.
@@ -737,6 +804,7 @@ def mover_agentes_con_conflictos(agentes: List[AgentExtendido],
 
     def _mover_reclamando(agente: "AgentExtendido", destino: Tuple[int, int]) -> bool:
         """Mueve si destino está libre (o es la celda actual); actualiza ocupación."""
+        # [AUDITORÍA REGLAS PFF] NO APLICA — si el destino sigue ocupado se queda y sube la ansiedad; no elige otra celda por φ
         nonlocal movidos
         origen = (agente.pos_x, agente.pos_y)
         dest = (int(destino[0]), int(destino[1]))

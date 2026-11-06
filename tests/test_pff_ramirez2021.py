@@ -99,6 +99,7 @@ def test_regla_2_etapa_i_solo_la_vecina_de_menor_phi_si_esta_vacia():
 
 
 def test_regla_3_etapa_ii_menor_phi_entre_las_libres_que_mejoran():
+    """En esta grilla la etapa II tiene una sola libre con φ <= actual: (2, 1)."""
     campo = CampoFijo(
         [
             [500, 500, 500, 500],
@@ -112,7 +113,8 @@ def test_regla_3_etapa_ii_menor_phi_entre_las_libres_que_mejoran():
     assert agente.stress == 5
 
 
-def test_regla_4_etapa_iii_vecina_vacia_al_azar(monkeypatch):
+def test_regla_4_etapa_iii_minimo_entre_las_libres():
+    """Etapa III va al mínimo libre, aquí (2, 2) con φ = 0, aunque (2, 1) también esté libre."""
     campo = CampoFijo(
         [
             [500, 500, 500, 500],
@@ -122,11 +124,7 @@ def test_regla_4_etapa_iii_vecina_vacia_al_azar(monkeypatch):
         ]
     )
     agente = _agente(campo, 1, 1, stress=11, u_i=2, u_ii=10)
-    monkeypatch.setattr(
-        "simulacion.agentes.random.choice",
-        lambda opciones: (2, 1),
-    )
-    assert agente.proponer_movimiento({(1, 1)}) == (2, 1)
+    assert agente.proponer_movimiento({(1, 1)}) == (2, 2)
     assert agente.stress == 11
 
 
@@ -161,6 +159,7 @@ def test_regla_6_el_perdedor_del_conflicto_sube_su_estres(monkeypatch):
 
 
 def test_el_motor_anterior_sigue_actualizando_el_estres_al_proponer():
+    """El motor anterior cambia el estrés al proponer. En un mínimo local se queda y sube."""
     campo = CampoFijo(
         [
             [500, 500, 500, 500],
@@ -170,6 +169,19 @@ def test_el_motor_anterior_sigue_actualizando_el_estres_al_proponer():
         ]
     )
     agente = _agente(campo, 1, 1, stress=3, ramirez=False)
-    assert agente.proponer_movimiento({(1, 1)}) == (1, 2)
-    assert agente.stress == 2
+    assert agente.proponer_movimiento({(1, 1)}) == (1, 1)
+    assert agente.stress == 4
     assert agente.x == 1
+
+    bajada = CampoFijo(
+        [
+            [500, 500, 500, 500],
+            [500, 4, 1, 500],
+            [500, 3, 2, 500],
+            [500, 500, 500, 500],
+        ]
+    )
+    baja = _agente(bajada, 1, 1, stress=3, ramirez=False)
+    assert baja.proponer_movimiento({(1, 1)}) == (2, 1)
+    assert baja.stress == 2
+    assert baja.x == 1

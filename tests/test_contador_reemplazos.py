@@ -52,7 +52,9 @@ def test_misma_semilla_con_y_sin_contador():
     assert sum(contador.pasos_con_ruta.values()) > 0
     for etapa in (1, 2, 3):
         assert (
-            contador.conservada[etapa] + contador.reemplazada[etapa]
+            contador.conservada[etapa]
+            + contador.ruta_quedarse[etapa]
+            + contador.reemplazada[etapa]
             == contador.pasos_con_ruta[etapa]
         )
         assert sum(contador.causas[etapa].values()) == contador.reemplazada[etapa]

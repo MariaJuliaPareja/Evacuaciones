@@ -121,6 +121,7 @@ def _fila(escenario, etapa, contador, pasos_totales, meta) -> dict:
     pasos = contador.pasos_con_ruta[etapa]
     conservada = contador.conservada[etapa]
     reemplazada = contador.reemplazada[etapa]
+    quedarse = contador.ruta_quedarse[etapa]
     causas = contador.causas[etapa]
     desglose = " ".join(f"{causa}={causas[causa]}" for causa in ContadorReemplazos.CAUSAS)
     return {
@@ -130,6 +131,8 @@ def _fila(escenario, etapa, contador, pasos_totales, meta) -> dict:
         "pasos_totales": pasos_totales,
         "n_runs": meta["n_runs"],
         "pct_conservada": 0.0 if pasos == 0 else 100.0 * conservada / pasos,
+        # [CAMBIO] antes: la celda de ruta igual a la posición entraba en pct_conservada -> ahora: pct_ruta_quedarse
+        "pct_ruta_quedarse": 0.0 if pasos == 0 else 100.0 * quedarse / pasos,
         "pct_reemplazada": 0.0 if pasos == 0 else 100.0 * reemplazada / pasos,
         "desglose": desglose,
         "ocupada": causas["ocupada"],
@@ -216,6 +219,7 @@ def main() -> None:
                 f"pasos_totales={fila['pasos_totales']} "
                 f"pasos_con_ruta={fila['pasos_con_celda_de_ruta']} "
                 f"conservada={fila['pct_conservada']:.1f}% "
+                f"ruta_quedarse={fila['pct_ruta_quedarse']:.1f}% "
                 f"reemplazada={fila['pct_reemplazada']:.1f}% {fila['desglose']}",
                 flush=True,
             )

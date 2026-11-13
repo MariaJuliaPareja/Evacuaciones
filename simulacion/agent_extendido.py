@@ -36,10 +36,15 @@ class ContadorReemplazos:
         self.pasos_con_ruta = {1: 0, 2: 0, 3: 0}
         self.conservada = {1: 0, 2: 0, 3: 0}
         self.reemplazada = {1: 0, 2: 0, 3: 0}
+        # [CAMBIO] antes: la celda de ruta igual a la posición sumaba en conservada -> ahora: ruta_quedarse, ni conservada ni reemplazada
+        self.ruta_quedarse = {1: 0, 2: 0, 3: 0}
         self.causas = {etapa: {causa: 0 for causa in self.CAUSAS} for etapa in (1, 2, 3)}
 
     def anotar(self, etapa: int, causa: Optional[str]) -> None:
         self.pasos_con_ruta[etapa] += 1
+        if causa == "ruta_quedarse":
+            self.ruta_quedarse[etapa] += 1
+            return
         if causa is None:
             self.conservada[etapa] += 1
             return
@@ -51,6 +56,7 @@ class ContadorReemplazos:
             self.pasos_con_ruta[etapa] += otro.pasos_con_ruta[etapa]
             self.conservada[etapa] += otro.conservada[etapa]
             self.reemplazada[etapa] += otro.reemplazada[etapa]
+            self.ruta_quedarse[etapa] += otro.ruta_quedarse[etapa]
             for causa in self.CAUSAS:
                 self.causas[etapa][causa] += otro.causas[etapa][causa]
 
@@ -370,11 +376,16 @@ class AgentExtendido:
         # [AUDITORÍA REGLAS PFF] CORREGIDO — reglas 1, 2 y 3: la ruta solo pasa si es candidata legal
         # [CAMBIO] antes: se pisaba la siguiente celda de la ruta, o el greedy de 4 vecinos, sin mirar la etapa ni si esa celda era el mínimo -> ahora: si la celda no es candidata (ocupada, cuesta arriba en I/II, o no es el mínimo libre en III) se usa proponer_destino
         # [DUDA] si la celda de la ruta es una candidata legal, PRU la conserva y no sortea; el azar de la etapa II queda dentro de proponer_destino
-        # [DUDA] una celda de ruta igual a la posición actual se cuenta como conservada
         if siguiente is not None:
             celda = (int(siguiente[0]), int(siguiente[1]))
+            # [CAMBIO] antes: celda de ruta == posición se contaba como conservada y se devolvía -> ahora: el contador anota ruta_quedarse; el return no cambió
+            # [DUDA] en etapa I, II y III este return no llama a proponer_destino: el agente se queda aunque la regla tenga una celda libre obligatoria
+            if celda == (x, y):
+                if self.contar_reemplazos:
+                    self.reemplazos.anotar(etapa, "ruta_quedarse")
+                return celda
             opciones = candidatas(phi, ocupadas, x, y, etapa)
-            aceptada = celda == (x, y) or celda in opciones
+            aceptada = celda in opciones
             if self.contar_reemplazos:
                 # [CAMBIO] antes: el reemplazo no se anotaba -> ahora: se anota la causa sin llamar a random
                 causa = None if aceptada else clasificar_rechazo(phi, ocupadas, x, y, etapa, celda)

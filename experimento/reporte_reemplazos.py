@@ -174,7 +174,7 @@ def main() -> None:
         help="CSV de salida. Por defecto experimento/out/tabla_reemplazos.csv",
     )
     args = parser.parse_args()
-    # [DUDA] si no se pasa --UI, se usa el primer par de la grilla (U_I=1, U_II=2), no se barre sola
+    # [DUDA] si no se pasa --UI, se usa el primer par de la grilla (d_inv mínimo, U_I=1000, U_II=2000), no se barre sola. Con ese umbral estas corridas no salen de la etapa I.
     if args.UI is None:
         u_i, u_ii = grilla_umbrales()[0]
     else:

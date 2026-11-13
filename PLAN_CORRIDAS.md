@@ -1,6 +1,6 @@
 # Plan de corridas
 
-Comandos desde la raíz del repo. Sin `--n` / `--n_sims` / `--n` el default es `N_RUNS=100` de `experimento/config.py` (4 densidades × 16 umbrales). Los tiempos de abajo son para **2 corridas** por celda, extrapolados de una corrida a rho=1 y U_I=10. rho=1 es el extremo pesado: el total real puede quedar por debajo.
+Comandos desde la raíz del repo. Sin `--n` / `--n_sims` el default es `N_RUNS=100` de `experimento/config.py` (4 densidades × 16 umbrales). Los tiempos de la tabla mezclan dos cosas: la grilla completa de `sala_de_clases` con 2 corridas, medida, y el avión, extrapolado de una corrida a rho=1 y U_I=10.
 
 `barrido_herd.py`, `barrido_propuesta1.py`, `plot_herd.py` y `plot_propuesta1.py` no entran: están marcados como posible legado.
 
@@ -19,23 +19,23 @@ Tiempo con 2 corridas por celda de la grilla, salvo donde se dice que el script 
 
 | Orden | Comando | Produce | Tiempo con n=2 |
 |---|---|---|---|
-| 1 | `python -m experimento.barrido_pff --n 2` | `salidas/experimentos/barrido_pff_base.pkl` | ~1–2 min |
-| 2 | `python -m experimento.barrido_pru_fixed --scenario sala_de_clases --motor pff_ramirez --n_sims 2` | `experimento/out/tabla_sala_de_clases_pff_ramirez2021_seeded.csv` | ~5 s |
+| 1 | `python -m experimento.barrido_pff --n 2` | `salidas/experimentos/barrido_pff_base.pkl` | 19 s medidos |
+| 2 | `python -m experimento.barrido_pru_fixed --scenario sala_de_clases --motor pff_ramirez --n_sims 2` | `experimento/out/tabla_sala_de_clases_pff_ramirez2021_seeded.csv` | 1 s medido |
 | 2 | `python -m experimento.barrido_pru_fixed --scenario avion_dos_puertas --motor pff_ramirez --n_sims 2` | `experimento/out/tabla_avion_dos_puertas_pff_ramirez2021_seeded.csv` | ~15 s |
-| 2 | `python -m experimento.barrido_pru_fixed --scenario sala_de_clases --motor pru_fixed --n_sims 2` | `experimento/out/tabla_sala_de_clases_pru_fixed.csv` | ~1 min |
+| 2 | `python -m experimento.barrido_pru_fixed --scenario sala_de_clases --motor pru_fixed --n_sims 2` | `experimento/out/tabla_sala_de_clases_pru_fixed.csv` | 16 s medidos |
 | 2 | `python -m experimento.barrido_pru_fixed --scenario avion_dos_puertas --motor pru_fixed --n_sims 2` | `experimento/out/tabla_avion_dos_puertas_pru_fixed.csv` | ~3 min |
-| 3 | `python -m experimento.barrido_metodos --scenario sala_de_clases --method greedy_regla --n_sims 2` | `experimento/out/metodos_sala_de_clases_greedy_regla.csv` | ~15 s |
-| 3 | `python -m experimento.barrido_metodos --scenario sala_de_clases --method astar --n_sims 2` | `experimento/out/metodos_sala_de_clases_astar.csv` | ~20 s |
+| 3 | `python -m experimento.barrido_metodos --scenario sala_de_clases --method greedy_regla --n_sims 2` | `experimento/out/metodos_sala_de_clases_greedy_regla.csv` | 2 s medidos |
+| 3 | `python -m experimento.barrido_metodos --scenario sala_de_clases --method astar --n_sims 2` | `experimento/out/metodos_sala_de_clases_astar.csv` | 5 s medidos |
 | 3 | `python -m experimento.barrido_metodos --scenario avion_dos_puertas --method greedy_regla --n_sims 2` | `experimento/out/metodos_avion_dos_puertas_greedy_regla.csv` | ~1 min |
 | 3 | `python -m experimento.barrido_metodos --scenario avion_dos_puertas --method astar --n_sims 2` | `experimento/out/metodos_avion_dos_puertas_astar.csv` | ~1.5 min |
 | 3 | `python -m experimento.barrido_metodos --combine` | `experimento/out/tabla_metodos_barrido_completo.csv` | segundos, después de 2 y 3 |
 | 4 | `python -m figures.make_metodos_vs_UI` | `figures/out/metodos_vs_UI.pdf` y `.png` | segundos, después del `--combine`. Aborta si el CSV no trae procedencia |
 | 5 | `python -m experimento.comparar_pru_fixed` | `experimento/out/tabla_comparacion_pru_fixed.csv` | segundos, después del paso 2. También imprime la tabla vieja `tabla_comparacion_pff_pru_ramirez2021.csv`, que no tiene procedencia |
-| 6 | `python -m experimento.barrido_herd_nulo --scenario sala_de_clases --n_sims 2` | `experimento/out/herd_series/sala_de_clases_rho*_dinv*.npz` | ~1–2 min |
+| 6 | `python -m experimento.barrido_herd_nulo --scenario sala_de_clases --n_sims 2` | `experimento/out/herd_series/sala_de_clases_rho*_dinv*.npz` | 19 s medidos |
 | 6 | `python -m experimento.barrido_herd_nulo --scenario avion_dos_puertas --n_sims 2` | `experimento/out/herd_series/avion_dos_puertas_rho*_dinv*.npz` | ~6–8 min |
-| 6 | `python -m experimento.barrido_herd_nulo --report` | `experimento/out/tabla_herd_nulo_pru_fixed.csv` | segundos, después de las series y del `--combine` |
-| 7 | `python -m experimento.reporte_reemplazos --n 2` | `experimento/out/tabla_reemplazos.csv` y `experimento/out/tabla_reemplazos_combinaciones.csv` | ~10–30 s. Un solo U_I (el primero de la grilla), no las 16 |
-| 8 | `python -m experimento.comparar_regla_en_pru --n 2` | `experimento/out/tabla_ablacion_regla_en_pru.csv` | ~1 min. El default del script es `--n 5`, no `N_RUNS`. Cuatro U_I, no la grilla completa |
+| 6 | `python -m experimento.barrido_herd_nulo --report` | `experimento/out/tabla_herd_nulo_pru_fixed.csv` | segundos, después de las series y del `--combine`. Aborta si el npz no trae `n_runs` |
+| 7 | `python -m experimento.reporte_reemplazos --n 2` | `experimento/out/tabla_reemplazos.csv` y `experimento/out/tabla_reemplazos_combinaciones.csv` | 8 s medidos. Un solo U_I, el primero de la grilla (1000), no las 16. Con ese umbral no hay etapa II ni III |
+| 8 | `python -m experimento.comparar_regla_en_pru --n 2` | `experimento/out/tabla_ablacion_regla_en_pru.csv` | 28 s medidos, ambos escenarios. El default del script es `--n 5`, no `N_RUNS`. Cuatro U_I, no la grilla completa |
 
 `modo_clasico.py` no tiene CLI. Con 2 corridas a rho=1 en el escenario base tarda cerca de 1 s:
 

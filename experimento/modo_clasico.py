@@ -8,6 +8,7 @@ from typing import Any
 
 import numpy as np
 
+from experimento.config import MAX_PASOS, N_RUNS, RHO_VALS, SEED_BASE, grilla_umbrales
 from experimento.metricas import calcular_metricas
 
 try:
@@ -17,8 +18,8 @@ except ImportError:
 
 from simulacion.agentes import Agente, mover_agentes
 
-
-MAX_PASOS = 500
+# [DUDA] N_RUNS, RHO_VALS, SEED_BASE y la grilla se importan de config.py; esta función recibe rho y n_sims por argumento y la semilla sigue en 2026+i
+_ = (N_RUNS, RHO_VALS, SEED_BASE, grilla_umbrales)
 
 
 def _normalizar_escenario(escenario: Any) -> dict[str, Any]:
@@ -80,8 +81,11 @@ def _simular_una_corrida(
     campo = Floor_field(width, height, puertas, obstaculos)
     posiciones = _posiciones_iniciales(width, height, obstaculos, rho, rng)
 
-    # Modo clasico: U_I muy alto => siempre en regimen mild (determinista FF).
-    agentes = [Agente(x, y, campo, U_I=10**9, U_II=10**9) for (x, y) in posiciones]
+    # [CAMBIO] antes: Agente() sin ramirez2021, el motor PFF anterior -> ahora: ramirez2021=True explícito
+    # [DUDA] con U=1e9 todos están en etapa I y la regla 1 espera el mínimo absoluto (ya no es el greedy de Varas al mínimo libre)
+    agentes = [
+        Agente(x, y, campo, U_I=10**9, U_II=10**9, ramirez2021=True) for (x, y) in posiciones
+    ]
 
     historia: list[dict] = []
     for _ in range(MAX_PASOS):

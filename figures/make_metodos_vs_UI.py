@@ -11,7 +11,6 @@ Outputs:
 
 from __future__ import annotations
 
-import csv
 import math
 import sys
 from collections import Counter
@@ -24,8 +23,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from experimento.metricas import leer_csv  # noqa: E402
+
 OUT_DIR = ROOT / "figures" / "out"
-N = 100
+TABLA = ROOT / "experimento" / "out" / "tabla_metodos_barrido_completo.csv"
 RHOS = (0.25, 0.5, 0.75, 1.0)
 ORDER = ("pff", "greedy4", "astar", "pru")
 LABELS = {
@@ -61,26 +65,28 @@ def apply_style() -> None:
 
 
 def leer() -> list[dict]:
+    # [CAMBIO] antes: leía la tabla de la raíz sin mirar la procedencia -> ahora: experimento/out/ y aborta si faltan columnas
     rows = []
-    with (ROOT / "tabla_metodos_barrido_completo.csv").open(encoding="utf-8") as handle:
-        for row in csv.DictReader(handle):
-            rows.append(
-                {
-                    "scenario": row["scenario"],
-                    "rho": float(row["rho"]),
-                    "d_inv": round(float(row["d_inv"]), 8),
-                    "U": float(row["U_I"]),
-                    "method": row["method"],
-                    "T": float(row["T_mean"]),
-                    "sd": float(row["sigma_T"]),
-                    "se": float(row["SE"]),
-                }
-            )
+    for row in leer_csv(TABLA):
+        rows.append(
+            {
+                "scenario": row["scenario"],
+                "rho": float(row["rho"]),
+                "d_inv": round(float(row["d_inv"]), 8),
+                "U": float(row["U_I"]),
+                "method": row["method"],
+                "T": float(row["T_mean"]),
+                "sd": float(row["sigma_T"]),
+                "se": float(row["SE"]),
+                "n_runs": int(row["n_runs"]),
+            }
+        )
     return rows
 
 
 def clase(pru: dict, other: dict) -> str:
-    se = math.sqrt((pru["sd"] ** 2 + other["sd"] ** 2) / N)
+    # [CAMBIO] antes: el error estándar usaba N=100 fijo -> ahora: n_runs de cada fila
+    se = math.sqrt((pru["sd"] ** 2) / pru["n_runs"] + (other["sd"] ** 2) / other["n_runs"])
     diff = pru["T"] - other["T"]
     if abs(diff) <= 2.0 * se:
         return "indistinguible"

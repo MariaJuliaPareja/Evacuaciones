@@ -21,13 +21,14 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from experimento.barrido_pff import (  # noqa: E402
+from experimento.barrido_pff import _generar_posiciones_iniciales  # noqa: E402
+from experimento.config import (  # noqa: E402
     D_INV_VALS,
     MAX_PASOS,
-    N_SIMS,
+    N_RUNS,
     RHO_VALS,
     SEED_BASE,
-    _generar_posiciones_iniciales,
+    fila_procedencia,
 )
 from experimento.metricas import calcular_metricas, combinar_metricas  # noqa: E402
 from simulacion.agent_extendido import AgentExtendido, mover_agentes_con_conflictos  # noqa: E402
@@ -158,18 +159,57 @@ def ejecutar(esc, motor: str, n_sims: int) -> dict[str, Any]:
     return {"meta": {"n_sims": n_sims, "motor": motor}, "resultados": resultados}
 
 
-def escribir_csv(data: dict[str, Any], ruta: Path) -> None:
+def escribir_csv(data: dict[str, Any], ruta: Path, motor: str) -> None:
     n_sims = int(data["meta"]["n_sims"])
+    if motor == "pru_fixed":
+        flags = {
+            "motor": "PRU",
+            "ramirez2021": False,
+            "pru_fixed": True,
+            "reglas_etapa_en_pru": True,
+        }
+    else:
+        # [DUDA] PFF no tiene el flag reglas_etapa_en_pru; queda True porque el paso usa proponer_destino
+        flags = {
+            "motor": "PFF",
+            "ramirez2021": True,
+            "pru_fixed": False,
+            "reglas_etapa_en_pru": True,
+        }
     ruta.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "rho",
+        "d_inv",
+        "T_mean",
+        "sigma_T",
+        "fI",
+        "fII",
+        "fIII",
+        "n_sims",
+        "motor",
+        "ramirez2021",
+        "pru_fixed",
+        "reglas_etapa_en_pru",
+        "UI",
+        "UII",
+        "n_runs",
+        "semilla_base",
+        "commit",
+        "fecha",
+    ]
     with ruta.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(
-            handle,
-            fieldnames=["rho", "d_inv", "T_mean", "sigma_T", "fI", "fII", "fIII", "n_sims"],
-        )
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for entrada in data["resultados"]:
             metricas = entrada["metricas"] or {}
             fr = metricas.get("fraccion_stress") or {}
+            procedencia = fila_procedencia(
+                rho=entrada["rho"],
+                ui=entrada["U_I"],
+                uii=entrada["U_II"],
+                n_runs=n_sims,
+                **flags,
+            )
             writer.writerow(
                 {
                     "rho": entrada["rho"],
@@ -180,6 +220,7 @@ def escribir_csv(data: dict[str, Any], ruta: Path) -> None:
                     "fII": fr.get("optimal"),
                     "fIII": fr.get("anxiety"),
                     "n_sims": n_sims,
+                    **procedencia,
                 }
             )
 
@@ -188,17 +229,19 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scenario", required=True, choices=["sala_de_clases", "avion_dos_puertas"])
     parser.add_argument("--motor", required=True, choices=["pru_fixed", "pff_ramirez"])
-    parser.add_argument("--n_sims", type=int, default=N_SIMS)
+    parser.add_argument("--n_sims", type=int, default=N_RUNS)
+    parser.add_argument("--salida", type=Path, default=None)
     args = parser.parse_args()
     esc = load_scenario(args.scenario)
-    print(f"{args.motor} {args.scenario} N_SIMS={args.n_sims}", flush=True)
+    print(f"{args.motor} {args.scenario} N_RUNS={args.n_sims}", flush=True)
     data = ejecutar(esc, args.motor, args.n_sims)
     if args.motor == "pru_fixed":
         nombre = f"tabla_{args.scenario}_pru_fixed.csv"
     else:
         nombre = f"tabla_{args.scenario}_pff_ramirez2021_seeded.csv"
-    destino = ROOT / nombre
-    escribir_csv(data, destino)
+    # [CAMBIO] antes: el CSV se escribía en la raíz del repo -> ahora: experimento/out/
+    destino = args.salida if args.salida is not None else ROOT / "experimento" / "out" / nombre
+    escribir_csv(data, destino, args.motor)
     print(f"Saved {destino}")
 
 

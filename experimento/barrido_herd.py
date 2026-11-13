@@ -1,3 +1,4 @@
+# [DUDA] posible legado
 """Barrido de parametros con instrumentacion de comportamiento herd."""
 
 from __future__ import annotations

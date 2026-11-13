@@ -9,6 +9,18 @@ from collections import Counter, defaultdict
 from statistics import mean, pstdev
 from typing import Any
 
+from experimento.config import N_RUNS, RHO_VALS, SEED_BASE, grilla_umbrales
+
+# [DUDA] estas métricas no barrían la grilla; las constantes se importan de config.py y no cambian el cálculo
+_ = (N_RUNS, SEED_BASE, RHO_VALS, grilla_umbrales)
+
+
+def leer_csv(path) -> list[dict]:
+    """Igual que metricas.leer_csv: un CSV sin procedencia aborta."""
+    from experimento.metricas import leer_csv as _leer
+
+    return _leer(path)
+
 
 def detectar_cascadas(recalculo_log: list[dict], ventana: int = 5) -> list[dict]:
     """

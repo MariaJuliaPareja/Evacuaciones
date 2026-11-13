@@ -29,20 +29,24 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from experimento.barrido_pff import (  # noqa: E402
+from experimento.barrido_pff import _generar_posiciones_iniciales  # noqa: E402
+from experimento.barrido_pru_fixed import sembrar_corrida, semilla_de  # noqa: E402
+from experimento.config import (  # noqa: E402
     D_INV_VALS,
     MAX_PASOS,
-    N_SIMS,
+    N_RUNS,
     RHO_VALS,
-    _generar_posiciones_iniciales,
+    SEED_BASE,
+    fila_procedencia,
 )
-from experimento.barrido_pru_fixed import sembrar_corrida, semilla_de  # noqa: E402
+from experimento.metricas import leer_csv  # noqa: E402
 from simulacion.agent_extendido import AgentExtendido, mover_agentes_con_conflictos  # noqa: E402
 from simulacion.grilla.floor_field import Floor_field  # noqa: E402
 from simulacion.nodos.path_selector import PathSelector  # noqa: E402
 
 SERIES = ROOT / "experimento" / "out" / "herd_series"
-TABLA = ROOT / "tabla_herd_nulo_pru_fixed.csv"
+# [CAMBIO] antes: la tabla se escribía en la raíz -> ahora: experimento/out/
+TABLA = ROOT / "experimento" / "out" / "tabla_herd_nulo_pru_fixed.csv"
 N_SURR = 1000
 THRESHOLDS = (0.20, 0.30, 0.40)
 
@@ -80,6 +84,7 @@ def simular_series(esc, rho: float, d_inv: float, semilla: int) -> tuple[np.ndar
             U_I=u_i,
             U_II=2.0 * u_i,
             pru_fixed=True,
+            reglas_etapa_en_pru=True,
         )
     n = len(AgentExtendido.instances)
     activos_steps: list[np.ndarray] = []
@@ -215,6 +220,8 @@ def ejecutar(scenario: str, n_sims: int) -> None:
                 nu30=obs[0.30],
                 nu40=obs[0.40],
                 **{key: np.array(value) for key, value in stats.items()},
+                n_runs=np.array(n_sims),
+                semilla_base=np.array(SEED_BASE),
             )
             print(
                 f"{scenario} {hecha}/{total} rho={rho} U_I={1/float(d_inv):.4g} "
@@ -271,20 +278,49 @@ def reportar() -> None:
                 for key in campos[4:]:
                     fila[key] = float(np.asarray(data[key]).reshape(-1)[0])
                 fila["T_series"] = float(np.mean(data["T"]))
+                n_runs = int(np.asarray(data["n_runs"]).reshape(-1)[0]) if "n_runs" in data.files else N_RUNS
+                fila.update(
+                    fila_procedencia(
+                        motor="PRU",
+                        ramirez2021=False,
+                        pru_fixed=True,
+                        reglas_etapa_en_pru=True,
+                        rho=float(rho),
+                        ui=1.0 / float(d_inv),
+                        uii=2.0 / float(d_inv),
+                        n_runs=n_runs,
+                    )
+                )
                 filas.append(fila)
     with TABLA.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=campos, extrasaction="ignore")
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                *campos,
+                "motor",
+                "ramirez2021",
+                "pru_fixed",
+                "reglas_etapa_en_pru",
+                "UI",
+                "UII",
+                "n_runs",
+                "semilla_base",
+                "commit",
+                "fecha",
+            ],
+            extrasaction="ignore",
+        )
         writer.writeheader()
         writer.writerows(filas)
     print(f"Saved {TABLA}", flush=True)
 
     metodos = {}
-    with (ROOT / "tabla_metodos_barrido_completo.csv").open(encoding="utf-8") as handle:
-        for row in csv.DictReader(handle):
-            if row["method"] not in ("pru", "astar"):
-                continue
-            clave = (row["scenario"], round(float(row["rho"]), 5), round(float(row["d_inv"]), 8), row["method"])
-            metodos[clave] = row
+    # [CAMBIO] antes: leía la tabla combinada de la raíz -> ahora: experimento/out/, y aborta si no trae procedencia
+    for row in leer_csv(ROOT / "experimento" / "out" / "tabla_metodos_barrido_completo.csv"):
+        if row["method"] not in ("pru", "astar"):
+            continue
+        clave = (row["scenario"], round(float(row["rho"]), 5), round(float(row["d_inv"]), 8), row["method"])
+        metodos[clave] = row
     nu, sigma, delta = [], [], []
     for fila in filas:
         clave_base = (fila["scenario"], round(fila["rho"], 5), round(fila["d_inv"], 8))
@@ -327,7 +363,7 @@ def reportar() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scenario", choices=["sala_de_clases", "avion_dos_puertas"])
-    parser.add_argument("--n_sims", type=int, default=N_SIMS)
+    parser.add_argument("--n_sims", type=int, default=N_RUNS)
     parser.add_argument("--report", action="store_true")
     args = parser.parse_args()
     if args.report:

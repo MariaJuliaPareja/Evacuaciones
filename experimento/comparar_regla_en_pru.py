@@ -9,9 +9,7 @@ from __future__ import annotations
 import argparse
 import csv
 import importlib
-import subprocess
 import sys
-from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -23,7 +21,7 @@ from experimento.barrido_pru_fixed import (  # noqa: E402
     semilla_de,
     simular_pru,
 )
-from experimento.config import SEED_BASE, grilla_umbrales  # noqa: E402
+from experimento.config import N_RUNS, RHO_VALS, SEED_BASE, fila_procedencia, grilla_umbrales  # noqa: E402
 from experimento.metricas import calcular_metricas, combinar_metricas  # noqa: E402
 
 ESCENARIOS = ("sala_de_clases", "avion_dos_puertas")
@@ -74,24 +72,12 @@ def celdas_libres(escenario: str) -> int:
     return 1
 
 
-def _commit() -> str:
-    try:
-        salida = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        return salida.stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return "sin-commit"
+# [DUDA] N_RUNS y RHO_VALS se importan de config.py; esta ablación fija rho=1 y --n default 5, no N_RUNS
+_ = (N_RUNS, RHO_VALS, SEED_BASE)
 
 
 def correr(n: int) -> list[dict]:
     filas = []
-    commit = _commit()
-    fecha = date.today().isoformat()
     rho = 1.0
     for escenario in ESCENARIOS:
         esc = load_scenario(escenario)
@@ -106,26 +92,28 @@ def correr(n: int) -> list[dict]:
                     parciales.append(calcular_metricas(historia))
                 metricas = combinar_metricas(parciales) or {}
                 t_medio = float(metricas.get("T"))
-                filas.append(
-                    {
-                        "escenario": escenario,
-                        "UI": u_i,
-                        "UII": u_ii,
-                        "flag": flag,
-                        "T_medio": t_medio,
-                        "T_std": float(metricas.get("sigma_T")),
-                        "T_normalizado": t_medio / libre,
-                        "motor": "PRU",
-                        "ramirez2021": False,
-                        "pru_fixed": True,
-                        "reglas_etapa_en_pru": flag,
-                        "rho": rho,
-                        "n_runs": n,
-                        "semilla_base": SEED_BASE,
-                        "commit": commit,
-                        "fecha": fecha,
-                    }
+                fila = {
+                    "escenario": escenario,
+                    "UI": u_i,
+                    "UII": u_ii,
+                    "flag": flag,
+                    "T_medio": t_medio,
+                    "T_std": float(metricas.get("sigma_T")),
+                    "T_normalizado": t_medio / libre,
+                }
+                fila.update(
+                    fila_procedencia(
+                        motor="PRU",
+                        ramirez2021=False,
+                        pru_fixed=True,
+                        reglas_etapa_en_pru=flag,
+                        rho=rho,
+                        ui=u_i,
+                        uii=u_ii,
+                        n_runs=n,
+                    )
                 )
+                filas.append(fila)
                 print(
                     f"{escenario} UI={u_i:.6g} flag={flag} T={t_medio:.2f}",
                     flush=True,

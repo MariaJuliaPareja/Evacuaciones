@@ -6,6 +6,7 @@ estrés Yerkes-Dodson y sin PathSelector ni AgentExtendido.
 
 from __future__ import annotations
 
+import argparse
 import inspect
 import pickle
 import random
@@ -16,8 +17,12 @@ from typing import Any
 
 import numpy as np
 
+from experimento.config import D_INV_VALS, MAX_PASOS, N_RUNS, RHO_VALS, SEED_BASE
 from experimento.metricas import calcular_metricas, combinar_metricas
 import gc
+
+# [CAMBIO] antes: N_SIMS = 100 se definía en este archivo -> ahora: alias de N_RUNS para scripts fuera de experimento/ que asignan barrido_pff.N_SIMS
+N_SIMS = N_RUNS
 
 try:
     from simulacion.grilla_clasica.floor_field import Floor_field
@@ -28,13 +33,6 @@ try:
     from simulacion.agentes import Agente, mover_agentes
 except ImportError:
     from simulacion.agentes import Agente, mover_agentes
-
-
-RHO_VALS = [0.25, 0.50, 0.75, 1.0]
-D_INV_VALS = np.logspace(-3, 0, 16)
-N_SIMS = 100
-MAX_PASOS = 500
-SEED_BASE = 12345
 
 
 def _cargar_escenario_base() -> dict[str, Any]:
@@ -90,7 +88,8 @@ def _simular_una_historia(
     u_i = d
     u_ii = 2.0 * d
 
-    agentes = [Agente(x, y, ff, U_I=u_i, U_II=u_ii) for (x, y) in posiciones]
+    # [CAMBIO] antes: Agente() sin ramirez2021, el motor PFF anterior -> ahora: ramirez2021=True explícito
+    agentes = [Agente(x, y, ff, U_I=u_i, U_II=u_ii, ramirez2021=True) for (x, y) in posiciones]
 
     historia_frames: list[dict[str, Any]] = []
     for _ in range(MAX_PASOS):
@@ -116,8 +115,10 @@ def _simular_una_historia(
     return historia_frames
 
 
-def ejecutar_barrido() -> dict[str, Any]:
-    """Ejecuta el barrido PFF puro y retorna un dict con los resultados."""
+def ejecutar_barrido(n_sims: int | None = None) -> dict[str, Any]:
+    """Ejecuta el barrido PFF con ramirez2021=True y retorna un dict con los resultados."""
+    if n_sims is None:
+        n_sims = N_SIMS
     esc = _cargar_escenario_base()
     width = esc["width"]
     height = esc["height"]
@@ -128,7 +129,7 @@ def ejecutar_barrido() -> dict[str, Any]:
         "meta": {
             "rho_vals": RHO_VALS,
             "d_inv_vals": [float(v) for v in D_INV_VALS],
-            "n_sims": N_SIMS,
+            "n_sims": n_sims,
             "max_pasos": MAX_PASOS,
             "escenario": esc,
         },
@@ -141,7 +142,7 @@ def ejecutar_barrido() -> dict[str, Any]:
     for rho in RHO_VALS:
         for d_inv in D_INV_VALS:
             parciales: list[dict[str, Any]] = []
-            for i in range(N_SIMS):
+            for i in range(n_sims):
                 semilla = SEED_BASE + i + int(1_000_000 * float(rho)) + int(10_000 * float(d_inv))
                 historia = _simular_una_historia(
                     width=width,
@@ -185,10 +186,18 @@ def guardar_resultados(resultados: dict[str, Any], ruta_salida: Path) -> None:
 
 if __name__ == "__main__":
     try:
-        salida = Path("salidas") / "experimentos" / "barrido_pff_base.pkl"
-        data = ejecutar_barrido()
-        guardar_resultados(data, salida)
-        print(f"Barrido PFF completo. Archivo guardado en: {salida}")
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--n", type=int, default=N_RUNS)
+        parser.add_argument(
+            "--salida",
+            type=Path,
+            default=Path("salidas") / "experimentos" / "barrido_pff_base.pkl",
+        )
+        args = parser.parse_args()
+        # [DUDA] el pkl no es un CSV: no lleva las columnas de procedencia
+        data = ejecutar_barrido(args.n)
+        guardar_resultados(data, args.salida)
+        print(f"Barrido PFF completo. Archivo guardado en: {args.salida}")
     except KeyboardInterrupt:
         print("Ejecución interrumpida por el usuario.")
         sys.exit(1)

@@ -13,19 +13,23 @@ import argparse
 import csv
 import importlib
 import random
-import subprocess
 import sys
-from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from experimento.barrido_pff import (  # noqa: E402
-    _generar_posiciones_iniciales,
-)
+from experimento.barrido_pff import _generar_posiciones_iniciales  # noqa: E402
 from experimento.barrido_pru_fixed import sembrar_corrida, semilla_de  # noqa: E402
+from experimento.config import (  # noqa: E402
+    MAX_PASOS,
+    N_RUNS,
+    RHO,
+    SEED_BASE,
+    fila_procedencia,
+    grilla_umbrales,
+)
 from simulacion.agent_extendido import (  # noqa: E402
     AgentExtendido,
     ContadorReemplazos,
@@ -34,15 +38,6 @@ from simulacion.agent_extendido import (  # noqa: E402
 )
 from simulacion.grilla.floor_field import Floor_field  # noqa: E402
 from simulacion.nodos.path_selector import PathSelector  # noqa: E402
-
-# [CAMBIO] antes: rho, U_I, U_II y n estaban fijos en  la lista del escenario y U=10/20 -> ahora: salen de config.py o de los argumentos
-try:
-    from experimento import config as _config
-except ImportError:
-    from experimento import barrido_pff as _config
-
-    _config.N_RUNS = _config.N_SIMS
-    _config.RHO = 1.0
 
 ESCENARIOS = ("sala_de_clases", "avion_dos_puertas")
 ETIQUETA = {1: "I", 2: "II", 3: "III"}
@@ -61,20 +56,6 @@ def _escenario(nombre):
         "puertas": list(esc.puertas),
         "obstaculos": list(getattr(esc, "obstaculos", []) or []),
     }
-
-
-def _commit() -> str:
-    try:
-        salida = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        return salida.stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return "sin-commit"
 
 
 def correr(nombre: str, semilla: int, rho: float, u_i: float, u_ii: float):
@@ -104,7 +85,7 @@ def correr(nombre: str, semilla: int, rho: float, u_i: float, u_ii: float):
         )
     tiempo = 0
     max_ansiedad = 0.0
-    for paso in range(_config.MAX_PASOS):
+    for paso in range(MAX_PASOS):
         activos = [a for a in AgentExtendido.instances if a.activo]
         if not activos:
             break
@@ -164,27 +145,28 @@ def _filas_combinaciones(escenario, etapa, contador, meta) -> list[dict]:
 
 
 def _meta(rho, u_i, u_ii, n) -> dict:
-    return {
-        "motor": MOTOR,
-        "pru_fixed": PRU_FIXED,
-        "reglas_etapa_en_pru": REGLAS_ETAPA_EN_PRU,
-        "contar_reemplazos": CONTAR_REEMPLAZOS,
-        "rho": rho,
-        "UI": u_i,
-        "UII": u_ii,
-        "n_runs": n,
-        "semilla_base": _config.SEED_BASE,
-        "commit": _commit(),
-        "fecha": date.today().isoformat(),
-    }
+    # [DUDA] PRU no construye Agente; ramirez2021 queda False
+    meta = fila_procedencia(
+        motor=MOTOR,
+        ramirez2021=False,
+        pru_fixed=PRU_FIXED,
+        reglas_etapa_en_pru=REGLAS_ETAPA_EN_PRU,
+        rho=rho,
+        ui=u_i,
+        uii=u_ii,
+        n_runs=n,
+    )
+    meta["contar_reemplazos"] = CONTAR_REEMPLAZOS
+    meta["semilla_base"] = SEED_BASE
+    return meta
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--rho", type=float, default=_config.RHO)
+    parser.add_argument("--rho", type=float, default=RHO)
     parser.add_argument("--UI", type=float, default=None)
     parser.add_argument("--UII", type=float, default=None)
-    parser.add_argument("--n", type=int, default=_config.N_RUNS)
+    parser.add_argument("--n", type=int, default=N_RUNS)
     parser.add_argument(
         "--salida",
         type=Path,
@@ -194,7 +176,7 @@ def main() -> None:
     args = parser.parse_args()
     # [DUDA] si no se pasa --UI, se usa el primer par de la grilla (U_I=1, U_II=2), no se barre sola
     if args.UI is None:
-        u_i, u_ii = _config.grilla_umbrales()[0] if hasattr(_config, "grilla_umbrales") else (1.0, 2.0)
+        u_i, u_ii = grilla_umbrales()[0]
     else:
         u_i = args.UI
         u_ii = args.UII if args.UII is not None else 2.0 * u_i

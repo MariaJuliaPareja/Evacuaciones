@@ -1,3 +1,4 @@
+# [DUDA] posible legado
 """Generacion de figuras para resultados del barrido de la propuesta 1."""
 
 from __future__ import annotations

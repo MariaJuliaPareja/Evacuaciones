@@ -28,16 +28,17 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from experimento.barrido_pff import (  # noqa: E402
+from experimento.barrido_pff import _generar_posiciones_iniciales  # noqa: E402
+from experimento.barrido_pru_fixed import sembrar_corrida, semilla_de  # noqa: E402
+from experimento.config import (  # noqa: E402
     D_INV_VALS,
     MAX_PASOS,
-    N_SIMS,
+    N_RUNS,
     RHO_VALS,
     SEED_BASE,
-    _generar_posiciones_iniciales,
+    fila_procedencia,
 )
-from experimento.barrido_pru_fixed import sembrar_corrida, semilla_de  # noqa: E402
-from experimento.metricas import calcular_metricas, combinar_metricas  # noqa: E402
+from experimento.metricas import calcular_metricas, combinar_metricas, leer_csv  # noqa: E402
 from simulacion.agent_extendido import AgentExtendido, mover_agentes_con_conflictos  # noqa: E402
 from simulacion.grilla.floor_field import Floor_field  # noqa: E402
 from simulacion.nodos.path_selector import PathSelector  # noqa: E402
@@ -100,6 +101,7 @@ def simular(esc, rho: float, d_inv: float, semilla: int, method: str) -> list[di
             U_II=2.0 * u_i,
             k_paths_max=k_paths,
             pru_fixed=True,
+            reglas_etapa_en_pru=True,
         )
     historia = []
     for step in range(MAX_PASOS):
@@ -141,7 +143,26 @@ def ejecutar(scenario: str, method: str, n_sims: int) -> None:
     with path.open("a", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(
             handle,
-            fieldnames=["rho", "d_inv", "T_mean", "sigma_T", "fI", "fII", "fIII", "n_sims"],
+            fieldnames=[
+                "rho",
+                "d_inv",
+                "T_mean",
+                "sigma_T",
+                "fI",
+                "fII",
+                "fIII",
+                "n_sims",
+                "motor",
+                "ramirez2021",
+                "pru_fixed",
+                "reglas_etapa_en_pru",
+                "UI",
+                "UII",
+                "n_runs",
+                "semilla_base",
+                "commit",
+                "fecha",
+            ],
         )
         if nuevo:
             writer.writeheader()
@@ -170,6 +191,18 @@ def ejecutar(scenario: str, method: str, n_sims: int) -> None:
                         "fII": fr.get("optimal"),
                         "fIII": fr.get("anxiety"),
                         "n_sims": n_sims,
+                        # [CAMBIO] antes: el parcial no decía qué motor ni qué semilla lo escribió -> ahora: columnas de procedencia
+                        # [DUDA] greedy4 y astar son PRU sin el flag ramirez2021; esa columna queda False
+                        **fila_procedencia(
+                            motor="PRU",
+                            ramirez2021=False,
+                            pru_fixed=True,
+                            reglas_etapa_en_pru=True,
+                            rho=float(rho),
+                            ui=1.0 / float(d_inv),
+                            uii=2.0 / float(d_inv),
+                            n_runs=n_sims,
+                        ),
                     }
                 )
                 handle.flush()
@@ -182,8 +215,7 @@ def ejecutar(scenario: str, method: str, n_sims: int) -> None:
 
 
 def _leer(path: Path) -> list[dict]:
-    with path.open(encoding="utf-8") as handle:
-        return list(csv.DictReader(handle))
+    return leer_csv(path)
 
 
 def combinar() -> None:
@@ -193,12 +225,14 @@ def combinar() -> None:
         fuentes = {
             "greedy4": destino_parcial(scenario, "greedy4"),
             "astar": destino_parcial(scenario, "astar"),
-            "pru": ROOT / f"tabla_{scenario}_pru_fixed.csv",
-            "pff": ROOT / f"tabla_{scenario}_pff_ramirez2021_seeded.csv",
+            # [CAMBIO] antes: --combine leía los CSV de la raíz -> ahora: experimento/out/
+            "pru": OUT_DIR / f"tabla_{scenario}_pru_fixed.csv",
+            "pff": OUT_DIR / f"tabla_{scenario}_pff_ramirez2021_seeded.csv",
         }
         for method, path in fuentes.items():
             for row in _leer(path):
                 sd = float(row["sigma_T"])
+                n_runs = int(row["n_runs"])
                 filas.append(
                     {
                         "scenario": scenario,
@@ -208,10 +242,21 @@ def combinar() -> None:
                         "method": method,
                         "T_mean": float(row["T_mean"]),
                         "sigma_T": sd,
-                        "SE": sd / (N_SIMS ** 0.5),
+                        "SE": sd / (n_runs ** 0.5),
+                        "motor": row["motor"],
+                        "ramirez2021": row["ramirez2021"],
+                        "pru_fixed": row["pru_fixed"],
+                        "reglas_etapa_en_pru": row["reglas_etapa_en_pru"],
+                        "UI": row["UI"],
+                        "UII": row["UII"],
+                        "n_runs": n_runs,
+                        "semilla_base": row["semilla_base"],
+                        "commit": row["commit"],
+                        "fecha": row["fecha"],
                     }
                 )
-    destino = ROOT / "tabla_metodos_barrido_completo.csv"
+    # [CAMBIO] antes: la tabla combinada se escribía en la raíz -> ahora: experimento/out/
+    destino = OUT_DIR / "tabla_metodos_barrido_completo.csv"
     with destino.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(filas[0].keys()))
         writer.writeheader()
@@ -223,7 +268,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scenario", choices=["sala_de_clases", "avion_dos_puertas"])
     parser.add_argument("--method", choices=["greedy4", "astar"])
-    parser.add_argument("--n_sims", type=int, default=N_SIMS)
+    parser.add_argument("--n_sims", type=int, default=N_RUNS)
     parser.add_argument("--combine", action="store_true")
     args = parser.parse_args()
     if args.combine:
@@ -232,7 +277,7 @@ def main() -> None:
     if not args.scenario or not args.method:
         parser.error("--scenario and --method are required unless --combine")
     print(
-        f"{args.method} {args.scenario} N_SIMS={args.n_sims} SEED_BASE={SEED_BASE}",
+        f"{args.method} {args.scenario} N_RUNS={args.n_sims} SEED_BASE={SEED_BASE}",
         flush=True,
     )
     ejecutar(args.scenario, args.method, args.n_sims)

@@ -2,9 +2,26 @@
 
 from __future__ import annotations
 
+import csv
 import math
-import numpy as np
+from pathlib import Path
 from typing import Any
+
+import numpy as np
+
+from experimento.config import N_RUNS, RHO_VALS, SEED_BASE, exigir_procedencia, grilla_umbrales
+
+# [DUDA] N_RUNS, SEED_BASE, RHO_VALS y la grilla no entran en el cálculo de T; se importan porque config.py es la única fuente
+_ = (N_RUNS, SEED_BASE, RHO_VALS, grilla_umbrales)
+
+
+def leer_csv(path) -> list[dict]:
+    """Lee un CSV de experimento. Si falta la procedencia, aborta con un mensaje."""
+    path = Path(path)
+    with path.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        exigir_procedencia(reader.fieldnames, path)
+        return list(reader)
 
 
 def _es_frame(obj: Any) -> bool:

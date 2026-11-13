@@ -1,3 +1,4 @@
+# [DUDA] posible legado
 """Barrido de parametros para la propuesta 1 de evacuacion."""
 
 from __future__ import annotations

@@ -18,7 +18,13 @@ from types import SimpleNamespace
 from typing import Tuple, Optional, Dict, List
 
 from simulacion.colisiones import anotar
-from simulacion.reglas_etapa import candidatas, clasificar_rechazo, etapa_de, proponer_destino
+from simulacion.reglas_etapa import (
+    candidatas,
+    causas_simultaneas,
+    clasificar_rechazo,
+    etapa_de,
+    proponer_destino,
+)
 
 
 class ContadorReemplazos:
@@ -39,8 +45,11 @@ class ContadorReemplazos:
         # [CAMBIO] antes: la celda de ruta igual a la posición sumaba en conservada -> ahora: ruta_quedarse, ni conservada ni reemplazada
         self.ruta_quedarse = {1: 0, 2: 0, 3: 0}
         self.causas = {etapa: {causa: 0 for causa in self.CAUSAS} for etapa in (1, 2, 3)}
+        # [CAMBIO] antes: solo se guardaba la causa única -> ahora: también las combinaciones, sin cambiar esa causa
+        self.multicausa = {1: 0, 2: 0, 3: 0}
+        self.combinaciones = {1: {}, 2: {}, 3: {}}
 
-    def anotar(self, etapa: int, causa: Optional[str]) -> None:
+    def anotar(self, etapa: int, causa: Optional[str], simultaneas: Optional[list] = None) -> None:
         self.pasos_con_ruta[etapa] += 1
         if causa == "ruta_quedarse":
             self.ruta_quedarse[etapa] += 1
@@ -50,6 +59,10 @@ class ContadorReemplazos:
             return
         self.reemplazada[etapa] += 1
         self.causas[etapa][causa] += 1
+        if simultaneas and len(simultaneas) > 1:
+            self.multicausa[etapa] += 1
+            clave = "+".join(simultaneas)
+            self.combinaciones[etapa][clave] = self.combinaciones[etapa].get(clave, 0) + 1
 
     def sumar(self, otro: "ContadorReemplazos") -> None:
         for etapa in (1, 2, 3):
@@ -57,8 +70,11 @@ class ContadorReemplazos:
             self.conservada[etapa] += otro.conservada[etapa]
             self.reemplazada[etapa] += otro.reemplazada[etapa]
             self.ruta_quedarse[etapa] += otro.ruta_quedarse[etapa]
+            self.multicausa[etapa] += otro.multicausa[etapa]
             for causa in self.CAUSAS:
                 self.causas[etapa][causa] += otro.causas[etapa][causa]
+            for clave, cuenta in otro.combinaciones[etapa].items():
+                self.combinaciones[etapa][clave] = self.combinaciones[etapa].get(clave, 0) + cuenta
 
 
 def sumar_reemplazos(agentes) -> ContadorReemplazos:
@@ -387,9 +403,13 @@ class AgentExtendido:
             opciones = candidatas(phi, ocupadas, x, y, etapa)
             aceptada = celda in opciones
             if self.contar_reemplazos:
-                # [CAMBIO] antes: el reemplazo no se anotaba -> ahora: se anota la causa sin llamar a random
-                causa = None if aceptada else clasificar_rechazo(phi, ocupadas, x, y, etapa, celda)
-                self.reemplazos.anotar(etapa, causa)
+                # [CAMBIO] antes: el reemplazo no se anotaba -> ahora: se anota la causa única y, aparte, las que se cumplen juntas
+                if aceptada:
+                    self.reemplazos.anotar(etapa, None)
+                else:
+                    causa = clasificar_rechazo(phi, ocupadas, x, y, etapa, celda)
+                    simultaneas = causas_simultaneas(phi, ocupadas, x, y, etapa, celda)
+                    self.reemplazos.anotar(etapa, causa, simultaneas)
             if aceptada:
                 return celda
         return proponer_destino(phi, ocupadas, x, y, etapa)

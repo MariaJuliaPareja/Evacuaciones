@@ -117,40 +117,50 @@ def correr(nombre: str, semilla: int, rho: float, u_i: float, u_ii: float):
     return tiempo, sumar_reemplazos(AgentExtendido.instances), max_ansiedad
 
 
+def _pct(cuenta: int, pasos: int) -> float:
+    return 0.0 if pasos == 0 else 100.0 * cuenta / pasos
+
+
 def _fila(escenario, etapa, contador, pasos_totales, meta) -> dict:
     pasos = contador.pasos_con_ruta[etapa]
-    conservada = contador.conservada[etapa]
-    reemplazada = contador.reemplazada[etapa]
-    quedarse = contador.ruta_quedarse[etapa]
     causas = contador.causas[etapa]
-    desglose = " ".join(f"{causa}={causas[causa]}" for causa in ContadorReemplazos.CAUSAS)
-    return {
+    # [CAMBIO] antes: pct_reemplazada agrupaba todas las causas -> ahora: un % por causa única, y con conservada y ruta_quedarse suman 100
+    # [DUDA] el orden de la causa única no se toca; una celda con varias causas solo entra en la primera
+    fila = {
         "escenario": escenario,
         "etapa": ETIQUETA[etapa],
         "pasos_con_celda_de_ruta": pasos,
         "pasos_totales": pasos_totales,
         "n_runs": meta["n_runs"],
-        "pct_conservada": 0.0 if pasos == 0 else 100.0 * conservada / pasos,
-        # [CAMBIO] antes: la celda de ruta igual a la posición entraba en pct_conservada -> ahora: pct_ruta_quedarse
-        "pct_ruta_quedarse": 0.0 if pasos == 0 else 100.0 * quedarse / pasos,
-        "pct_reemplazada": 0.0 if pasos == 0 else 100.0 * reemplazada / pasos,
-        "desglose": desglose,
-        "ocupada": causas["ocupada"],
-        "subiria": causas["subiria"],
-        "no_minimo_libre": causas["no_minimo_libre"],
-        "no_vecina": causas["no_vecina"],
-        "no_minimo_absoluto": causas["no_minimo_absoluto"],
-        "motor": meta["motor"],
-        "pru_fixed": meta["pru_fixed"],
-        "reglas_etapa_en_pru": meta["reglas_etapa_en_pru"],
-        "contar_reemplazos": meta["contar_reemplazos"],
-        "rho": meta["rho"],
-        "UI": meta["UI"],
-        "UII": meta["UII"],
-        "semilla_base": meta["semilla_base"],
-        "commit": meta["commit"],
-        "fecha": meta["fecha"],
+        "pct_conservada": _pct(contador.conservada[etapa], pasos),
+        "pct_ruta_quedarse": _pct(contador.ruta_quedarse[etapa], pasos),
+        "pct_ocupada": _pct(causas["ocupada"], pasos),
+        "pct_subiria": _pct(causas["subiria"], pasos),
+        "pct_no_minimo_absoluto": _pct(causas["no_minimo_absoluto"], pasos),
+        "pct_no_minimo_libre": _pct(causas["no_minimo_libre"], pasos),
+        "pct_no_vecina": _pct(causas["no_vecina"], pasos),
+        "pasos_mas_de_una_causa": contador.multicausa[etapa],
     }
+    fila.update(meta)
+    return fila
+
+
+def _filas_combinaciones(escenario, etapa, contador, meta) -> list[dict]:
+    pasos = contador.pasos_con_ruta[etapa]
+    filas = []
+    for combinacion, cuenta in sorted(contador.combinaciones[etapa].items()):
+        fila = {
+            "escenario": escenario,
+            "etapa": ETIQUETA[etapa],
+            "combinacion": combinacion,
+            "pasos": cuenta,
+            "pct_de_pasos_con_ruta": _pct(cuenta, pasos),
+            "pasos_mas_de_una_causa": contador.multicausa[etapa],
+            "pasos_con_celda_de_ruta": pasos,
+        }
+        fila.update(meta)
+        filas.append(fila)
+    return filas
 
 
 def _meta(rho, u_i, u_ii, n) -> dict:
@@ -191,6 +201,7 @@ def main() -> None:
     d_inv = 1.0 / u_i
     meta = _meta(args.rho, u_i, u_ii, args.n)
     filas = []
+    combinaciones = []
     for escenario in ESCENARIOS:
         total = ContadorReemplazos()
         pasos_totales = 0
@@ -214,13 +225,19 @@ def main() -> None:
         for etapa in (1, 2, 3):
             fila = _fila(escenario, etapa, total, pasos_totales, meta)
             filas.append(fila)
+            combinaciones.extend(_filas_combinaciones(escenario, etapa, total, meta))
             print(
                 f"  etapa {fila['etapa']}: corridas={fila['n_runs']} "
                 f"pasos_totales={fila['pasos_totales']} "
                 f"pasos_con_ruta={fila['pasos_con_celda_de_ruta']} "
                 f"conservada={fila['pct_conservada']:.1f}% "
                 f"ruta_quedarse={fila['pct_ruta_quedarse']:.1f}% "
-                f"reemplazada={fila['pct_reemplazada']:.1f}% {fila['desglose']}",
+                f"ocupada={fila['pct_ocupada']:.1f}% "
+                f"subiria={fila['pct_subiria']:.1f}% "
+                f"no_minimo_absoluto={fila['pct_no_minimo_absoluto']:.1f}% "
+                f"no_minimo_libre={fila['pct_no_minimo_libre']:.1f}% "
+                f"no_vecina={fila['pct_no_vecina']:.1f}% "
+                f"mas_de_una={fila['pasos_mas_de_una_causa']}",
                 flush=True,
             )
     args.salida.parent.mkdir(parents=True, exist_ok=True)
@@ -229,6 +246,22 @@ def main() -> None:
         writer.writeheader()
         writer.writerows(filas)
     print(f"Saved {args.salida}", flush=True)
+    destino_comb = args.salida.with_name(args.salida.stem + "_combinaciones.csv")
+    campos_comb = [
+        "escenario",
+        "etapa",
+        "combinacion",
+        "pasos",
+        "pct_de_pasos_con_ruta",
+        "pasos_mas_de_una_causa",
+        "pasos_con_celda_de_ruta",
+        *meta.keys(),
+    ]
+    with destino_comb.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=campos_comb)
+        writer.writeheader()
+        writer.writerows(combinaciones)
+    print(f"Saved {destino_comb} filas={len(combinaciones)}", flush=True)
 
 
 if __name__ == "__main__":

@@ -109,6 +109,65 @@ def clasificar_rechazo(phi, ocupadas, x: int, y: int, etapa: int, celda) -> str:
     return "subiria"
 
 
+def _minimo_absoluto_descendente(phi, x: int, y: int, sx: int, sy: int) -> bool:
+    height, width = phi.shape
+    if max(abs(sx - x), abs(sy - y)) != 1 or not (0 <= sx < width and 0 <= sy < height):
+        return False
+    valor = float(phi[sy, sx])
+    if valor >= 500:
+        return False
+    vecinos = _vecinos(phi, x, y)
+    if not vecinos:
+        return False
+    minimo = min(item[2] for item in vecinos)
+    return minimo < float(phi[y, x]) and valor == minimo
+
+
+def _minimo_libre(phi, ocupadas, x: int, y: int, sx: int, sy: int) -> bool:
+    height, width = phi.shape
+    if max(abs(sx - x), abs(sy - y)) != 1 or not (0 <= sx < width and 0 <= sy < height):
+        return False
+    valor = float(phi[sy, sx])
+    if valor >= 500 or (sx, sy) in ocupadas:
+        return False
+    libres = [item for item in _vecinos(phi, x, y) if (item[0], item[1]) not in ocupadas]
+    if not libres:
+        return False
+    minimo = min(item[2] for item in libres)
+    return valor == minimo
+
+
+def causas_simultaneas(phi, ocupadas, x: int, y: int, etapa: int, celda) -> list[str]:
+    """Causas que se cumplen a la vez, en el orden de clasificar_rechazo.
+
+    No elige la causa única: esa sigue siendo el retorno de clasificar_rechazo.
+
+    # [DUDA] no_minimo_absoluto se anota también si la celda ya es no_vecina, ocupada o subiria
+    # [DUDA] φ >= 500 cuenta como no_vecina y, en etapa I o II, también como subiria si φ > actual
+    # [DUDA] la celda igual a la posición no entra aquí; el contador la anota como ruta_quedarse
+    """
+    sx, sy = int(celda[0]), int(celda[1])
+    height, width = phi.shape
+    en_mapa = 0 <= sx < width and 0 <= sy < height
+    valor = float(phi[sy, sx]) if en_mapa else None
+    geometrica = max(abs(sx - x), abs(sy - y)) == 1 and en_mapa
+    no_vecina = (not geometrica) or (valor is not None and valor >= 500)
+    ocupadas = set(ocupadas)
+    actual = float(phi[y, x])
+    causas = []
+    if no_vecina:
+        causas.append("no_vecina")
+    if (sx, sy) in ocupadas:
+        causas.append("ocupada")
+    if valor is not None and etapa in (1, 2) and valor > actual:
+        causas.append("subiria")
+    if etapa == 1 and not _minimo_absoluto_descendente(phi, x, y, sx, sy):
+        causas.append("no_minimo_absoluto")
+    if etapa == 3 and not _minimo_libre(phi, ocupadas, x, y, sx, sy):
+        causas.append("no_minimo_libre")
+    return causas
+
+
 def proponer_destino(phi, ocupadas, x: int, y: int, etapa: int) -> tuple[int, int]:
     """Elige la celda del paso. Si no hay candidata, devuelve (x, y)."""
     opciones = candidatas(phi, ocupadas, x, y, etapa)

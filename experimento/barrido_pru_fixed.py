@@ -92,7 +92,9 @@ def simular_pff(esc, rho: float, d_inv: float, semilla: int) -> list[dict]:
     return historia
 
 
-def simular_pru(esc, rho: float, d_inv: float, semilla: int) -> list[dict]:
+def simular_pru(
+    esc, rho: float, d_inv: float, semilla: int, reglas_etapa_en_pru: bool = True
+) -> list[dict]:
     sembrar_corrida(semilla)
     ff = Floor_field(esc["width"], esc["height"], esc["puertas"], esc["obstaculos"])
     selector = PathSelector(ff, umbral_recalculo=0.6, anxiety_thresholds=(30, 70), pru_fixed=True)
@@ -114,6 +116,8 @@ def simular_pru(esc, rho: float, d_inv: float, semilla: int) -> list[dict]:
             U_I=u_i,
             U_II=2.0 * u_i,
             pru_fixed=True,
+            # [CAMBIO] antes: el flag no se pasaba y valía el default True -> ahora: el argumento lo fija; el barrido oficial sigue en True
+            reglas_etapa_en_pru=reglas_etapa_en_pru,
         )
     historia = []
     for step in range(MAX_PASOS):

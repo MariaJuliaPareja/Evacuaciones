@@ -145,8 +145,8 @@ def nulos(
     return {thr: np.mean(fraction > thr, axis=1) for thr in THRESHOLDS}
 
 
-def serie_path(scenario: str, rho: float, d_inv: float) -> Path:
-    return SERIES / f"{scenario}_rho{rho:.2f}_dinv{d_inv:.8f}.npz"
+def serie_path(scenario: str, rho: float, d_inv: float, series: Path = SERIES) -> Path:
+    return series / f"{scenario}_rho{rho:.2f}_dinv{d_inv:.8f}.npz"
 
 
 def resumir_config(obs: dict[float, np.ndarray], nulls: dict[float, np.ndarray]) -> dict[str, float]:
@@ -173,15 +173,16 @@ def resumir_config(obs: dict[float, np.ndarray], nulls: dict[float, np.ndarray])
     return out
 
 
-def ejecutar(scenario: str, n_sims: int) -> None:
+def ejecutar(scenario: str, n_sims: int, series: Path = SERIES) -> None:
     esc = load_scenario(scenario)
-    SERIES.mkdir(parents=True, exist_ok=True)
+    # [CAMBIO] antes: las series siempre iban a experimento/out/herd_series -> ahora: se puede pasar otro directorio
+    series.mkdir(parents=True, exist_ok=True)
     total = len(RHO_VALS) * len(D_INV_VALS)
     hecha = 0
     for rho in RHO_VALS:
         for d_inv in D_INV_VALS:
             hecha += 1
-            path = serie_path(scenario, float(rho), float(d_inv))
+            path = serie_path(scenario, float(rho), float(d_inv), series)
             if path.exists():
                 print(f"skip {scenario} {hecha}/{total}", flush=True)
                 continue
@@ -364,6 +365,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scenario", choices=["sala_de_clases", "avion_dos_puertas"])
     parser.add_argument("--n_sims", type=int, default=N_RUNS)
+    parser.add_argument("--series", type=Path, default=SERIES)
     parser.add_argument("--report", action="store_true")
     args = parser.parse_args()
     if args.report:
@@ -371,8 +373,8 @@ def main() -> None:
         return
     if not args.scenario:
         parser.error("--scenario is required")
-    print(f"herd {args.scenario} N_SIMS={args.n_sims} N_SURR={N_SURR}", flush=True)
-    ejecutar(args.scenario, args.n_sims)
+    print(f"herd {args.scenario} N_RUNS={args.n_sims} N_SURR={N_SURR}", flush=True)
+    ejecutar(args.scenario, args.n_sims, args.series)
 
 
 if __name__ == "__main__":

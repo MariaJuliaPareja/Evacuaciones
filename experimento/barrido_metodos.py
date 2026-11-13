@@ -132,9 +132,10 @@ def claves_hechas(path: Path) -> set[tuple[float, float]]:
     return hechas
 
 
-def ejecutar(scenario: str, method: str, n_sims: int) -> None:
+def ejecutar(scenario: str, method: str, n_sims: int, destino: Path | None = None) -> None:
     esc = load_scenario(scenario)
-    path = destino_parcial(scenario, method)
+    # [CAMBIO] antes: el parcial siempre iba a experimento/out -> ahora: --salida permite una prueba en otro directorio
+    path = destino if destino is not None else destino_parcial(scenario, method)
     path.parent.mkdir(parents=True, exist_ok=True)
     hechas = claves_hechas(path)
     nuevo = not path.exists()
@@ -269,6 +270,7 @@ def main() -> None:
     parser.add_argument("--scenario", choices=["sala_de_clases", "avion_dos_puertas"])
     parser.add_argument("--method", choices=["greedy_regla", "astar"])
     parser.add_argument("--n_sims", type=int, default=N_RUNS)
+    parser.add_argument("--salida", type=Path, default=None)
     parser.add_argument("--combine", action="store_true")
     args = parser.parse_args()
     if args.combine:
@@ -280,7 +282,7 @@ def main() -> None:
         f"{args.method} {args.scenario} N_RUNS={args.n_sims} SEED_BASE={SEED_BASE}",
         flush=True,
     )
-    ejecutar(args.scenario, args.method, args.n_sims)
+    ejecutar(args.scenario, args.method, args.n_sims, args.salida)
 
 
 if __name__ == "__main__":

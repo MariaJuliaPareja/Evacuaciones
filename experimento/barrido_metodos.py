@@ -1,6 +1,6 @@
-"""Greedy de 4 vecinos y A* sin desbloqueo, pru_fixed=True.
+"""PRU sin path_selector (greedy_regla) y A* sin desbloqueo, pru_fixed=True.
 # [CAMBIO] AgenteGreedy8 retirado: usaba la regla antigua
-# [CAMBIO] antes: el barrido ofrecía greedy8 -> ahora: solo greedy4 y astar
+# [CAMBIO] antes: el método se llamaba greedy4 -> ahora: greedy_regla, PRU sin path_selector y con la regla de 8 vecinos
 
 Same seeds as experimento/barrido_pru_fixed.py. Does not modify the motors
 and does not overwrite the existing PFF or PRU tables. Those two methods are
@@ -80,7 +80,7 @@ def simular(esc, rho: float, d_inv: float, semilla: int, method: str) -> list[di
     if method == "astar":
         selector = PathSelector(ff, umbral_recalculo=0.6, anxiety_thresholds=(30, 70), pru_fixed=True)
         k_paths = 1
-    elif method != "greedy4":
+    elif method != "greedy_regla":
         raise ValueError(method)
     AgentExtendido.instances = []
     AgentExtendido.history = []
@@ -192,7 +192,7 @@ def ejecutar(scenario: str, method: str, n_sims: int) -> None:
                         "fIII": fr.get("anxiety"),
                         "n_sims": n_sims,
                         # [CAMBIO] antes: el parcial no decía qué motor ni qué semilla lo escribió -> ahora: columnas de procedencia
-                        # [DUDA] greedy4 y astar son PRU sin el flag ramirez2021; esa columna queda False
+                        # [DUDA] greedy_regla y astar son PRU sin el flag ramirez2021; esa columna queda False
                         **fila_procedencia(
                             motor="PRU",
                             ramirez2021=False,
@@ -223,7 +223,7 @@ def combinar() -> None:
     for scenario in ("sala_de_clases", "avion_dos_puertas"):
         # [CAMBIO] antes: combinar leía el parcial de greedy8 -> ahora: ese método no entra en la tabla
         fuentes = {
-            "greedy4": destino_parcial(scenario, "greedy4"),
+            "greedy_regla": destino_parcial(scenario, "greedy_regla"),
             "astar": destino_parcial(scenario, "astar"),
             # [CAMBIO] antes: --combine leía los CSV de la raíz -> ahora: experimento/out/
             "pru": OUT_DIR / f"tabla_{scenario}_pru_fixed.csv",
@@ -267,7 +267,7 @@ def combinar() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scenario", choices=["sala_de_clases", "avion_dos_puertas"])
-    parser.add_argument("--method", choices=["greedy4", "astar"])
+    parser.add_argument("--method", choices=["greedy_regla", "astar"])
     parser.add_argument("--n_sims", type=int, default=N_RUNS)
     parser.add_argument("--combine", action="store_true")
     args = parser.parse_args()

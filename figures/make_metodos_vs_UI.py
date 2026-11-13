@@ -1,4 +1,5 @@
-"""<T> versus U_I for PFF, Greedy-4, A* and PRU.
+"""<T> versus U_I for PFF, greedy_regla, A* and PRU.
+# [CAMBIO] antes: la serie se llamaba greedy4 / Greedy-4 -> ahora: greedy_regla, PRU sin path_selector
 # [CAMBIO] AgenteGreedy8 retirado: usaba la regla antigua
 # [CAMBIO] antes: la curva Greedy-8 salía en la figura -> ahora: esa serie no se dibuja ni se compara
 
@@ -31,20 +32,20 @@ from experimento.metricas import leer_csv  # noqa: E402
 OUT_DIR = ROOT / "figures" / "out"
 TABLA = ROOT / "experimento" / "out" / "tabla_metodos_barrido_completo.csv"
 RHOS = (0.25, 0.5, 0.75, 1.0)
-ORDER = ("pff", "greedy4", "astar", "pru")
+ORDER = ("pff", "greedy_regla", "astar", "pru")
 LABELS = {
     "pff": "PFF",
-    "greedy4": "Greedy-4",
+    "greedy_regla": "Regla 8 vecinos",
     "astar": "A*",
     "pru": "PRU",
 }
 COLORS = {
     "pff": "#1f77b4",
-    "greedy4": "#2ca02c",
+    "greedy_regla": "#2ca02c",
     "astar": "#9467bd",
     "pru": "#d62728",
 }
-COMPARE = ("astar", "greedy4", "pff")
+COMPARE = ("astar", "greedy_regla", "pff")
 
 
 def apply_style() -> None:

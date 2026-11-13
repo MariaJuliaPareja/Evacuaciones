@@ -279,7 +279,12 @@ def reportar() -> None:
                 for key in campos[4:]:
                     fila[key] = float(np.asarray(data[key]).reshape(-1)[0])
                 fila["T_series"] = float(np.mean(data["T"]))
-                n_runs = int(np.asarray(data["n_runs"]).reshape(-1)[0]) if "n_runs" in data.files else N_RUNS
+                if "n_runs" not in data.files:
+                    raise SystemExit(
+                        f"Serie sin procedencia: {serie_path(scenario, float(rho), float(d_inv))}. "
+                        "Falta n_runs. Es anterior a la regla de etapa y no se reporta."
+                    )
+                n_runs = int(np.asarray(data["n_runs"]).reshape(-1)[0])
                 fila.update(
                     fila_procedencia(
                         motor="PRU",
